@@ -1,0 +1,31 @@
+# Golden-set index (§5.10).
+#
+# The PDFs are NOT in git — client bid sets are confidential and large. Git holds
+# this manifest and the labels; the documents live in the derived-set bucket
+# under golden/ (§8.2). `checksum_sha256` is what ties a label file to the exact
+# bytes it was written against: a re-issued drawing set with the same filename is
+# a different document, and silently evaluating new labels against old pages is
+# how a green eval stops meaning anything.
+#
+# `local_path` is a convenience for developers who happen to have the file on
+# disk. run_eval falls back to S3 when it is absent.
+
+version: 1
+
+bid_sets:
+  - id: dutch-bros-2025-11-21
+    name: Dutch Bros Coffee — New Freestanding Store, Yorktown VA
+    project_number: VA0202
+    filename: BUILDING PLANS-Dutch Bros 11-21-25.pdf
+    local_path: building-plans/BUILDING PLANS-Dutch Bros 11-21-25.pdf
+    s3_key: golden/dutch-bros-2025-11-21/BUILDING PLANS-Dutch Bros 11-21-25.pdf
+    checksum_sha256: b673f6a6138e843ed076e4a221dd9b35716a0c3076cd47500892d64cfbe12936
+    page_count: 65
+    text_layer: RICH
+    labels: labels/dutch-bros-2025-11-21.yaml
+    notes: >
+      The reference set for the classifier and for extraction. Chosen because it is
+      an ordinary small commercial bid set rather than a convenient one: four
+      openings on a single sheet, no fire ratings anywhere, no handing column, and
+      one hardware group referenced but never defined. Every one of those is a case
+      the system is required to report rather than fill in.

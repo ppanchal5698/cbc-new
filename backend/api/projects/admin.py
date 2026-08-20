@@ -22,13 +22,19 @@ class DocumentAdmin(admin.ModelAdmin):
 class DocumentManifestAdmin(admin.ModelAdmin):
     """Every SKIP must be visible with its reason (§4.3 design rule, Risk R12)."""
 
-    list_display = ("document", "page_number", "page_class", "class_method", "text_layer", "ocr_route", "route_reason")
+    list_display = (
+        "document", "page_number", "page_class", "class_method",
+        "text_layer", "ocr_route", "route_reason",
+    )
     list_filter = ("page_class", "ocr_route", "text_layer", "class_method")
 
 
 @admin.register(PipelineJob)
 class PipelineJobAdmin(admin.ModelAdmin):
-    list_display = ("document", "stage", "status", "attempt", "external_job_id", "cost_actual", "completed_at")
+    list_display = (
+        "document", "stage", "status", "attempt",
+        "external_job_id", "cost_actual", "completed_at",
+    )
     list_filter = ("stage", "status")
     search_fields = ("external_job_id", "idempotency_key")
 

@@ -1,0 +1,26 @@
+# Copy to terraform.tfvars and fill in. tfvars is gitignored — it names people
+# and networks, and neither belongs in the repository.
+
+# Who gets alarm and budget mail. Each address receives an SNS confirmation link
+# that must be clicked, or the alarms fire into nothing.
+alert_emails = ["you@example.com"]
+
+# $10 for a free-tier-shaped dev environment. Alerts at 50/80/100% of actual plus
+# a forecast alert, so an overrun is visible before the month ends.
+monthly_budget_usd = 10
+
+# CIDRs allowed to reach the API host over HTTPS. Shell access is SSM Session
+# Manager and needs no ingress rule, so this is only for reaching the web app.
+# admin_ingress_cidrs = ["203.0.113.0/24"]
+
+# ── Left unset on purpose ────────────────────────────────────────────────────
+#
+# object_lock_retention_days
+#
+# §11.3 requires the retention period signed off in writing before it is enabled.
+# The bucket is created with Object Lock ENABLED regardless — that flag cannot be
+# set after creation — but no default retention rule is applied until this is set.
+# Once objects are written under a retention period it cannot be shortened for
+# them, which is why a plausible-looking default is the wrong move.
+#
+# object_lock_retention_days = 2555   # e.g. 7 years, once CBC has agreed to it

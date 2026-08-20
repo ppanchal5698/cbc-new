@@ -28,6 +28,7 @@ from fastapi import FastAPI  # noqa: E402
 
 from pipeline.consumers.sqs_consumer import consume_forever  # noqa: E402
 from pipeline.observability.logging_setup import configure  # noqa: E402
+from pipeline.observability.metrics import configure_xray  # noqa: E402
 from pipeline.routing import load_routing_table  # noqa: E402
 from shared.config import get_settings  # noqa: E402
 
@@ -37,6 +38,9 @@ log = logging.getLogger("cbc.pipeline")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure(service="pipeline")
+    # No-op locally; outside local it patches boto3 so a slow Textract or
+    # Bedrock call appears as its own span instead of unexplained stage time.
+    configure_xray(service="cbc-pipeline")
     settings_obj = get_settings()
 
     # Fail fast if the routing table is missing: §4.4 has no hardcoded fallback,

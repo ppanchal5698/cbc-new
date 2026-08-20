@@ -70,4 +70,8 @@ exclude = [".venv", "*/migrations/*"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-ignore = ["E501"]
+# E501 is enforced, not ignored. `ruff format` is deliberately NOT part of the
+# lint gate: this codebase is hand-wrapped at roughly 95 columns around dense
+# explanatory comments, and the formatter would rejoin those lines out to 110 in
+# 75 files. That is a large diff, a lost review-time property, and zero
+# correctness. Enforcing the ceiling gets the part that matters.

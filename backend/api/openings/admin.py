@@ -36,5 +36,8 @@ class FieldProvenanceElementAdmin(admin.ModelAdmin):
 
 @admin.register(Match)
 class MatchAdmin(admin.ModelAdmin):
-    list_display = ("opening", "catalog_item", "rank", "match_confidence", "status", "rating_ok", "handing_ok", "finish_ok")
+    list_display = (
+        "opening", "catalog_item", "rank", "match_confidence", "status",
+        "rating_ok", "handing_ok", "finish_ok",
+    )
     list_filter = ("status", "rating_ok", "handing_ok", "division_ok", "is_direct_equal")

@@ -91,18 +91,24 @@ def timed(stage: str, logger: logging.Logger | None = None):
     Every stage emits latency so that NFR-6 ("a reviewable draft in minutes") has a
     measurement rather than an impression (§3.3 step 14).
     """
+    # Imported here rather than at module scope: metrics imports the contextvars
+    # defined above, and a top-level import would be circular.
+    from pipeline.observability.metrics import emit, trace_segment
+
     logger = logger or logging.getLogger("cbc.pipeline")
     started = time.perf_counter()
-    with job_context(stage=stage):
+    with job_context(stage=stage), trace_segment(stage):
         logger.info("stage started")
         try:
             yield
         except Exception:
-            logger.exception(
-                "stage failed", extra={"duration_ms": int((time.perf_counter() - started) * 1000)}
-            )
+            duration_ms = int((time.perf_counter() - started) * 1000)
+            logger.exception("stage failed", extra={"duration_ms": duration_ms})
+            emit({"StageDurationMs": duration_ms}, stage=stage, outcome="failed")
             raise
-        logger.info(
-            "stage complete",
-            extra={"duration_ms": int((time.perf_counter() - started) * 1000)},
-        )
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        logger.info("stage complete", extra={"duration_ms": duration_ms})
+        # Latency per stage is the only way "a reviewable draft in minutes"
+        # (NFR-6) becomes a number rather than an impression, and the only way a
+        # regression is attributable to a stage rather than to the pipeline.
+        emit({"StageDurationMs": duration_ms}, stage=stage, outcome="ok")

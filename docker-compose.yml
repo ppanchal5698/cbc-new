@@ -88,6 +88,14 @@ services:
     working_dir: /app/api
     volumes:
       - ./backend:/app
+      # `make test` runs here, and tests/test_ops_reports.py exercises the
+      # operator scripts against real rows so they cannot drift back into
+      # printing numbers nobody measured.
+      - ./ops:/app/ops:ro
+      # The golden bid sets, read-only. The eval gate refuses to pass when it
+      # cannot reach them, so an unmounted PDF fails `make test` rather than
+      # quietly measuring nothing.
+      - ./building-plans:/building-plans:ro
     ports:
       - "8000:8000"
     env_file: [.env]
@@ -119,6 +127,15 @@ services:
     working_dir: /app
     volumes:
       - ./backend:/app
+      # The golden bid sets, read-only. Mounted at the repo-relative path the
+      # golden manifest records, so `make eval` finds them with no extra config.
+      # Read-only is not decoration: the source document must be byte-identical
+      # after processing (§11.3), and the filesystem is the cheapest guarantee.
+      - ./building-plans:/building-plans:ro
+      # ops/ lives at the repo root (§8.1) but its scripts run against the
+      # pipeline's Django context, so they are mounted rather than copied into
+      # the image: they are operator tooling, not part of the deployed worker.
+      - ./ops:/app/ops:ro
     ports:
       - "8001:8001"
     env_file: [.env]

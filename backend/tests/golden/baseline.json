@@ -1,0 +1,24 @@
+{
+  "dutch-bros-2025-11-21": {
+    "classifier": {
+      "schedule_recall": 1.0,
+      "schedule_precision": 0.25,
+      "schedule_pages_skipped": [],
+      "confusion": {
+        "TITLE -> TITLE": 1,
+        "DRAWING -> HARDWARE_SCHEDULE": 2,
+        "SPEC_TEXT -> SPEC_TEXT": 10,
+        "DRAWING -> DRAWING": 20,
+        "DRAWING -> SPEC_TEXT": 24,
+        "FINISH_SCHEDULE -> FINISH_SCHEDULE": 1,
+        "DOOR_SCHEDULE -> DOOR_SCHEDULE": 1,
+        "DRAWING -> DOOR_SCHEDULE": 3,
+        "DRAWING -> FINISH_SCHEDULE": 1,
+        "DRAWING -> UNKNOWN": 2
+      },
+      "estimated_cost_usd": "0.1200",
+      "naive_cost_usd": "0.9750"
+    },
+    "extraction": null
+  }
+}

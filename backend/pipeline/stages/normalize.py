@@ -30,6 +30,7 @@ from datetime import UTC
 
 import psycopg
 
+from pipeline.db.tables import column_names, doc_elements
 from shared.enums import ElementType
 
 log = logging.getLogger("cbc.normalize")
@@ -44,16 +45,14 @@ TYPE_MAP = {
     "SELECTION_ELEMENT": ElementType.SELECTION_MARK.value,
 }
 
-#: Column order for the COPY. Must match ELEMENT_COLUMNS exactly.
-ELEMENT_COLUMNS = (
-    "id", "document_id", "element_path", "page_number", "element_type", "text",
-    "x0", "y0", "x1", "y1", "x2", "y2", "x3", "y3",
-    "bbox_x_min", "bbox_y_min", "bbox_x_max", "bbox_y_max",
-    "ocr_confidence", "reading_order", "table_id", "row_index", "col_index",
-    "column_header", "created_at", "updated_at",
-)
+#: Column order for the COPY, derived from the SQLAlchemy mirror rather than
+#: retyped here. A hand-maintained second list is how a COPY ends up writing
+#: ``row_index`` into ``col_index`` after someone adds a column: both lists look
+#: plausible and nothing compares them. One definition, one order, and
+#: ``test_schema_parity.py`` checks that definition against the live database.
+ELEMENT_COLUMNS = column_names(doc_elements)
 
-COPY_SQL = f"COPY openings_docelement ({', '.join(ELEMENT_COLUMNS)}) FROM STDIN"
+COPY_SQL = f"COPY {doc_elements.name} ({', '.join(ELEMENT_COLUMNS)}) FROM STDIN"
 
 #: Rows per COPY flush. Large enough that the round-trip cost disappears, small
 #: enough that a failure does not roll back an entire 200-page set (§9 B3).

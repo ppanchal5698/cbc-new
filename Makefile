@@ -5,12 +5,20 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs migrate seed test test-fast eval calibrate cost-report \
-        lint format types schema shell dbshell bedrock-resolve aws-whoami \
+        eval-check eval-baseline lint format types schema shell dbshell \
+        bedrock-resolve aws-whoami \
         plan-dev apply-dev destroy-dev fmt-tf clean
 
 COMPOSE := docker compose
 API     := $(COMPOSE) exec -T api
 PIPE    := $(COMPOSE) exec -T pipeline
+# pytest honours `testpaths` only when invoked FROM the rootdir. The api service
+# works out of /app/api, so running the suite there silently collected api/ alone
+# and skipped every test under backend/tests/ — including the two traceability
+# tests that are the whole point of the suite. Run it from /app.
+PYTEST  := $(COMPOSE) exec -T -w /app api pytest
+# Same reason: linting from /app/api leaves pipeline/, shared/ and tests/ unchecked.
+RUFF    := $(COMPOSE) exec -T -w /app api ruff
 
 help:  ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -48,27 +56,31 @@ shell:  ## Django shell
 # ── quality ──────────────────────────────────────────────────────────────────
 
 test:  ## Full backend suite, including schema parity
-	$(API) pytest -q
+	$(PYTEST) -q
 
 test-fast:  ## Skip anything marked integration
-	$(API) pytest -q -m "not integration"
+	$(PYTEST) -q -m "not integration"
 
-eval:  ## Golden-set extraction evaluation; prints PER-FIELD metrics (§5.10)
+eval:  ## Golden-set evaluation; prints PER-FIELD metrics incl. absent-accuracy (§5.10)
 	$(PIPE) python -m tests.golden.run_eval
 
-calibrate:  ## Threshold curve from the golden set (§5.9)
-	$(PIPE) python -m ops.scripts.calibrate_threshold
+eval-check:  ## ...and exit non-zero on any regression against the recorded baseline
+	$(PIPE) python -m tests.golden.run_eval --check
 
-cost-report:  ## Per-bid-set AWS cost attribution from pipeline_jobs (§10.3)
-	$(PIPE) python -m ops.scripts.cost_report
+eval-baseline:  ## Record the current numbers as the baseline. REVIEW THEM before committing.
+	$(PIPE) python -m tests.golden.run_eval --write-baseline
 
-lint:  ## ruff + format check
-	$(API) ruff check .
-	$(API) ruff format --check .
+calibrate:  ## Per-field confidence threshold curve for CBC to pick an operating point (§5.9)
+	$(PIPE) python ops/scripts/calibrate_threshold.py
 
-format:  ## Apply ruff formatting
-	$(API) ruff check --fix .
-	$(API) ruff format .
+cost-report:  ## Per-bid-set AWS cost attribution from live tables (§10.3)
+	$(PIPE) python ops/scripts/cost_report.py
+
+lint:  ## ruff across the whole backend, not just api/
+	$(RUFF) check .
+
+format:  ## Apply ruff autofixes
+	$(RUFF) check --fix .
 
 # ── API contract ─────────────────────────────────────────────────────────────
 

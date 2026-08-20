@@ -1,0 +1,240 @@
+# Ground truth — Dutch Bros Coffee, Yorktown VA (project VA0202), 65 pages.
+#
+# Transcribed by hand from the PDF's own text layer, sheet A2.2 (page 15), which
+# carries the DOOR SCHEDULE, the DOOR TYPE / DOOR FRAME TYPE schedules, and the
+# HARDWARE GROUPS table.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# READ THIS BEFORE EDITING
+#
+# `null` means "the document does not state this". It is a POSITIVE assertion,
+# not a gap in the labelling, and it is the single most valuable thing in this
+# file. Absent-accuracy — how often the system correctly says "not stated"
+# instead of inventing a plausible value — is the metric NFR-2 actually cares
+# about, and it is invisible in a precision/recall summary.
+#
+# So: never delete a field because it is null, and never fill one in from a
+# sibling row, a door type, or a hardware group. If the schedule does not say it,
+# this file says null, and the system is required to say `<field>_absent: true`.
+# ─────────────────────────────────────────────────────────────────────────────
+
+bid_set_id: dutch-bros-2025-11-21
+checksum_sha256: b673f6a6138e843ed076e4a221dd9b35716a0c3076cd47500892d64cfbe12936
+
+# ── Where the extractable content is ────────────────────────────────────────
+# One sheet out of 65. This ratio is the entire argument for §4 triage: reading
+# all 65 pages with AnalyzeDocument costs $0.98, reading the one that matters
+# costs $0.015.
+schedule_pages: [15]
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Openings — sheet A2.2, DOOR SCHEDULE
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# The schedule has exactly four rows: 01, 02, 03, 06. Numbers 04 and 05 are NOT
+# in the document. An extraction that produces them is hallucinating, and the
+# eval counts each as a false positive rather than shrugging at a "close enough"
+# door count.
+#
+# Columns present: # · SIZE (W, H) · TYPE (DR., FR.) · GLASS · MATERIAL (DR.,
+# FR.) · HARDWARE · NOTES.
+#
+# Columns ABSENT from this schedule, for every row:
+#   * FIRE RATING — no rating column, no label column, no rating in any note.
+#     Nothing on any of the 65 pages assigns a rating to an opening. Every row is
+#     therefore `fire_rating_absent: true` (§5.8). This is the zero-tolerance
+#     case, and it is the reason this bid set was chosen.
+#   * HANDING — no hand column and no LH/RH anywhere in the schedule. Handing is
+#     inferable from the floor plan swing arcs by a human, which is exactly why
+#     the system must NOT infer it: a guessed hand orders a door that will not
+#     hang. Every row is `handing_absent: true`.
+#   * FINISH — no finish column. Note B says the door and frame are paint grade,
+#     painted PT-2, which is a painting instruction, not a hardware finish code.
+#     It must not be resolved against `finish_codes` (§5.7); `finish_raw` is null.
+
+openings:
+  - door_number: "01"
+    size_raw: "3' - 6\" x 7' - 0\""
+    width_inches: 42
+    height_inches: 84
+    door_type: "A"               # A - BACK DOOR
+    frame_type: "1"
+    glass: "TEMP."
+    door_material: "HM"          # HOLLOW METAL, 16 GA.
+    frame_material: "HMD"        # HOLLOW METAL WELDED & DIMPLED
+    hardware_group: "GROUP 1"
+    schedule_notes: "A,B,C,D,E,F"
+    handing: null
+    handing_absent: true
+    fire_rating_raw: null
+    fire_rating_minutes: null
+    fire_rating_absent: true
+    finish_raw: null
+    wall_type: null
+
+  - door_number: "02"
+    size_raw: "3' - 0\" x 7' - 0\""
+    width_inches: 36
+    height_inches: 84
+    door_type: "B"               # B - RUNNER DOOR
+    frame_type: "2"
+    glass: "TEMP."
+    door_material: "HM"
+    frame_material: "HMD"
+    hardware_group: "GROUP 2"
+    schedule_notes: "A,B,C,D,E,F"
+    handing: null
+    handing_absent: true
+    fire_rating_raw: null
+    fire_rating_minutes: null
+    fire_rating_absent: true
+    finish_raw: null
+    wall_type: null
+
+  - door_number: "03"
+    size_raw: "3' - 0\" x 7' - 0\""
+    width_inches: 36
+    height_inches: 84
+    door_type: "C"               # C - RESTROOM DOOR
+    frame_type: "2"
+    # The GLASS cell on this row is empty. Rows 01, 02 and 06 all say TEMP., so
+    # this is the row that catches a model filling a blank from its neighbours.
+    glass: null
+    door_material: "HM"
+    frame_material: "HMD"
+    hardware_group: "GROUP 3"
+    schedule_notes: "B,D,F,G"
+    handing: null
+    handing_absent: true
+    fire_rating_raw: null
+    fire_rating_minutes: null
+    fire_rating_absent: true
+    finish_raw: null
+    wall_type: null
+
+  - door_number: "06"
+    # A 3'-0" x 3'-0" opening: the walk-in cooler door, manufacturer-supplied.
+    size_raw: "3' - 0\" x 3' - 0\""
+    width_inches: 36
+    height_inches: 36
+    door_type: "F"               # F - COOLER DOOR
+    frame_type: "MFR."
+    glass: "TEMP."
+    door_material: "MFR."        # by the cooler manufacturer, not a CBC line
+    frame_material: "MFR."
+    # GROUP 6 is referenced here but never defined: the HARDWARE GROUPS table on
+    # the same sheet defines GROUPS 1, 2, 3 and 4 only. §5.11 requires this to be
+    # flagged as an unresolved group, never guessed and never silently dropped.
+    hardware_group: "GROUP 6"
+    schedule_notes: null
+    handing: null
+    handing_absent: true
+    fire_rating_raw: null
+    fire_rating_minutes: null
+    fire_rating_absent: true
+    finish_raw: null
+    wall_type: null
+
+# ── Cross-schedule resolution (§5.11) ───────────────────────────────────────
+hardware_groups_defined: ["GROUP 1", "GROUP 2", "GROUP 3", "GROUP 4"]
+hardware_groups_referenced: ["GROUP 1", "GROUP 2", "GROUP 3", "GROUP 6"]
+# Referenced by an opening but absent from the hardware table. Expected to
+# surface as an unresolved-group flag on door 06.
+hardware_groups_unresolved: ["GROUP 6"]
+# Defined but never referenced by any opening. Not an error — GROUP 4 is the
+# office door, which this store does not schedule — but worth reporting so an
+# estimator can confirm rather than discover it at install.
+hardware_groups_orphaned: ["GROUP 4"]
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Page classification (§4.3) — all 65 pages
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# Recall on the SCHEDULE classes is what Risk R12 weights, and it is what the CI
+# gate enforces. A false positive costs $0.015 of Textract; a false negative
+# costs a missing opening in a quote. The eval therefore gates on schedule recall
+# and reports everything else as an unenforced confusion breakdown.
+#
+# That reporting split also keeps the negatives honest. TITLE versus INDEX on the
+# cover sheet, or SPEC_TEXT versus DRAWING on a panel-schedule sheet, are
+# genuinely arguable calls that both route away from AnalyzeDocument. Gating on
+# them would fail builds over labelling opinion.
+#
+# Labelled from each sheet's title block. `A6`, `A7` and `A8` in this set are
+# exterior elevations and wall details, NOT schedules — the
+# `sheet_number_prefixes` hints in config/ocr_routes.json map exactly those
+# prefixes to DOOR_SCHEDULE and HARDWARE_SCHEDULE, so pages 23-29 are the
+# deliberate test that a Tier 2 hint raises a score without deciding a page.
+
+pages:
+  1:  {sheet: null,    class: TITLE}        # cover; also carries the sheet index
+  2:  {sheet: G0.1,    class: DRAWING}      # restroom door signage details
+  3:  {sheet: G1.0,    class: SPEC_TEXT}
+  4:  {sheet: G1.1,    class: SPEC_TEXT}
+  5:  {sheet: G1.2,    class: SPEC_TEXT}
+  # G1.3 carries the Division 08 DOOR HARDWARE specification as prose, including
+  # the sentence "Refer to DOOR SCHEDULE for hardware group assigned to each
+  # door." It is spec text, not a schedule: there is no table on it. The
+  # HARDWARE_SCHEDULE anchors include "DOOR HARDWARE", so the classifier is
+  # expected to over-trigger here. That is the correct trade at $0.015 and it
+  # shows up in the report as a precision miss, never a recall miss.
+  6:  {sheet: G1.3,    class: SPEC_TEXT}
+  7:  {sheet: G1.4,    class: SPEC_TEXT}
+  8:  {sheet: SP1.0,   class: DRAWING}
+  9:  {sheet: SP1.1,   class: DRAWING}
+  10: {sheet: A1.0,    class: DRAWING}
+  11: {sheet: A1.1,    class: DRAWING}      # equipment schedule — not Division 08
+  12: {sheet: A1.2,    class: DRAWING}      # stainless package — not Division 08
+  13: {sheet: A2.0,    class: DRAWING}      # floor plan
+  14: {sheet: A2.1,    class: FINISH_SCHEDULE}
+  15: {sheet: A2.2,    class: DOOR_SCHEDULE}   # ★ the only page that matters
+  16: {sheet: A3.0,    class: DRAWING}
+  17: {sheet: A3.1,    class: DRAWING}
+  18: {sheet: A3.2,    class: DRAWING}
+  19: {sheet: A4.0,    class: DRAWING}
+  20: {sheet: A4.1,    class: DRAWING}
+  21: {sheet: A5.0,    class: DRAWING}
+  22: {sheet: A5.1,    class: DRAWING}
+  23: {sheet: A6.0,    class: DRAWING}      # exterior elevations, despite the A6 hint
+  24: {sheet: A6.1,    class: DRAWING}      # exterior elevations, despite the A6 hint
+  25: {sheet: A7.0,    class: DRAWING}      # details, despite the A7 hint
+  26: {sheet: A7.1,    class: DRAWING}      # details, despite the A7 hint
+  27: {sheet: A7.2,    class: DRAWING}      # details, despite the A7 hint
+  28: {sheet: A8.0,    class: DRAWING}      # wall sections, despite the A8 hint
+  29: {sheet: A8.1,    class: DRAWING}      # wall sections, despite the A8 hint
+  30: {sheet: A9.0,    class: DRAWING}
+  31: {sheet: A9.1,    class: DRAWING}
+  32: {sheet: S1.0,    class: DRAWING}
+  33: {sheet: S1.1,    class: SPEC_TEXT}    # structural general notes
+  34: {sheet: S1.2,    class: DRAWING}
+  35: {sheet: S1.3,    class: DRAWING}
+  36: {sheet: S1.4,    class: DRAWING}
+  37: {sheet: S1.5,    class: DRAWING}      # shear wall schedule — not Division 08
+  38: {sheet: S2.1,    class: DRAWING}
+  39: {sheet: S2.2,    class: DRAWING}
+  40: {sheet: S2.3,    class: DRAWING}
+  41: {sheet: S2.4,    class: DRAWING}
+  42: {sheet: S2.5,    class: DRAWING}
+  43: {sheet: E0.0,    class: DRAWING}
+  44: {sheet: E0.1,    class: DRAWING}
+  45: {sheet: E1.0,    class: DRAWING}
+  46: {sheet: E2.0,    class: DRAWING}
+  47: {sheet: E2.1,    class: DRAWING}
+  48: {sheet: E2.2,    class: DRAWING}
+  49: {sheet: E3.0,    class: SPEC_TEXT}    # panel schedules — tabular, not Division 08
+  50: {sheet: E4.0,    class: SPEC_TEXT}    # electrical specifications
+  51: {sheet: M1.0,    class: DRAWING}
+  52: {sheet: M1.1,    class: DRAWING}
+  53: {sheet: M1.2,    class: DRAWING}
+  54: {sheet: M2.0,    class: DRAWING}
+  55: {sheet: M3.0,    class: SPEC_TEXT}    # mechanical specifications
+  56: {sheet: P1.0,    class: DRAWING}
+  57: {sheet: P1.1,    class: DRAWING}
+  58: {sheet: P2.0,    class: DRAWING}
+  59: {sheet: P3.0,    class: DRAWING}
+  60: {sheet: P3.0A,   class: DRAWING}
+  61: {sheet: P3.1,    class: DRAWING}
+  62: {sheet: P4.0,    class: DRAWING}
+  63: {sheet: P5.0,    class: DRAWING}
+  64: {sheet: P5.1,    class: DRAWING}
+  65: {sheet: P6.0,    class: SPEC_TEXT}    # plumbing specifications

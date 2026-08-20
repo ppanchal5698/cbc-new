@@ -96,7 +96,10 @@ TAX_RATES = [
 
 
 class Command(BaseCommand):
-    help = "Seed effective-dated reference data: finish codes, throat depths, margin bands, vendor multipliers, tax rates."
+    help = (
+        "Seed effective-dated reference data: finish codes, throat depths, "
+        "margin bands, vendor multipliers, tax rates."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(

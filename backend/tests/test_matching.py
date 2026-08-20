@@ -325,8 +325,12 @@ class TestVendorAndDirectEqual:
 
     def test_a_different_series_from_the_same_vendor_scores_lower(self):
         """Hager 3400 vs 3500 is Grade 1 vs Grade 2 — materially different (§1.3)."""
-        same = CatalogItemFactory(sku="S1", vendor="Hager", series="3400", fire_rating_minutes=90, handing="LH")
-        other = CatalogItemFactory(sku="S2", vendor="Hager", series="3500", fire_rating_minutes=90, handing="LH")
+        same = CatalogItemFactory(
+            sku="S1", vendor="Hager", series="3400", fire_rating_minutes=90, handing="LH"
+        )
+        other = CatalogItemFactory(
+            sku="S2", vendor="Hager", series="3500", fire_rating_minutes=90, handing="LH"
+        )
         wanted = criteria(vendor="Hager", series="3400")
         assert score_candidate(wanted, same).vendor_score > score_candidate(wanted, other).vendor_score
 
@@ -420,7 +424,9 @@ class TestRankingAndPersistence:
 
     def test_rematching_replaces_rather_than_accumulates(self):
         finish = FinishCodeFactory()
-        opening = OpeningFactory(fire_rating_minutes=90, fire_rating_absent=False, handing="LH", finish_code=finish)
+        opening = OpeningFactory(
+            fire_rating_minutes=90, fire_rating_absent=False, handing="LH", finish_code=finish
+        )
         CatalogItemFactory(
             description="Full mortise butt hinge", fire_rating_minutes=90,
             handing="LH", csi_division="08", finish_code=finish,

@@ -131,8 +131,10 @@ class TestVendorMultipliers:
             vendor_name="Hager", tier="Standard",
             multiplier=Decimal("0.2900"), effective_date=date(2026, 1, 1),
         )
-        assert VendorMultiplier.effective_on("Hager", "Standard", date(2025, 1, 1)).multiplier == Decimal("0.3200")
-        assert VendorMultiplier.effective_on("Hager", "Standard", date(2026, 6, 1)).multiplier == Decimal("0.2900")
+        jan = VendorMultiplier.effective_on("Hager", "Standard", date(2025, 1, 1))
+        assert jan.multiplier == Decimal("0.3200")
+        jun = VendorMultiplier.effective_on("Hager", "Standard", date(2026, 6, 1))
+        assert jun.multiplier == Decimal("0.2900")
 
 
 # ---------------------------------------------------------------------------

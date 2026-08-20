@@ -65,7 +65,11 @@ def _record(scene, **overrides):
         "size": {"value": "3070", "source_element_ids": [str(e["size"].id)], "confidence_llm": 0.95},
         "handing": {"value": "LH", "source_element_ids": [str(e["handing"].id)], "confidence_llm": 0.97},
         "finish": {"value": None, "source_element_ids": [], "confidence_llm": None},
-        "fire_rating": {"value": "90 MIN", "source_element_ids": [str(e["rating"].id)], "confidence_llm": 0.97},
+        "fire_rating": {
+            "value": "90 MIN",
+            "source_element_ids": [str(e["rating"].id)],
+            "confidence_llm": 0.97,
+        },
         "hardware_group": {"value": None, "source_element_ids": [], "confidence_llm": None},
         "alternate_designation": {"value": None, "source_element_ids": [], "confidence_llm": None},
     }

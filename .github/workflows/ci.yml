@@ -1,0 +1,154 @@
+name: CI
+
+# Four gates, cheapest first, so a lint error does not wait on a database.
+#
+#   lint            ruff
+#   test            the suite, including ★ schema parity against real Postgres
+#   eval            golden-set quality gate (§5.10)
+#   terraform       fmt + validate for every environment
+#
+# Nothing here deploys. Deployment is a separate, manually approved workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Required config has no defaults (§8.4) — the app refuses to start without it,
+  # which is the behaviour under test as much as anything else here.
+  ENVIRONMENT: local
+  DATABASE_URL: postgresql://postgres:password@localhost:5432/cbccopilot
+  DJANGO_SETTINGS_MODULE: config.settings.local
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  S3_SOURCE_BUCKET: cbc-copilot-source-ci
+  S3_DERIVED_BUCKET: cbc-copilot-derived-ci
+  OCR_ROUTE_CONFIG: config/ocr_routes.json
+  PYTHONPATH: ${{ github.workspace }}/backend:${{ github.workspace }}/backend/api
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra test
+        working-directory: backend
+      # `ruff format` is not a gate here — see the note in pyproject.toml.
+      - run: uv run ruff check .
+        working-directory: backend
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: cbccopilot
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # WeasyPrint links against these at import time, so a missing library is an
+      # ImportError in every quote-export test rather than a rendering bug.
+      - name: Install WeasyPrint native libraries
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 libffi-dev
+
+      - run: uv sync --frozen --extra test
+        working-directory: backend
+
+      # ★ Runs the schema-parity gate against a real, migrated Postgres. Drift
+      # between pipeline/db/tables.py and the Django migrations fails here.
+      - name: Test suite
+        run: uv run pytest -q --cov=. --cov-report=term-missing
+        working-directory: backend
+
+  eval:
+    runs-on: ubuntu-latest
+    # The golden bid sets are confidential and live in S3, not git. Without
+    # credentials the classifier half cannot run — and rather than pass silently,
+    # run_eval reports it as unmeasured and --check fails. So this job is gated on
+    # the secret being present, and its absence is visible in the job list rather
+    # than hidden inside a green build.
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: cbccopilot
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra test
+        working-directory: backend
+
+      - name: Configure AWS credentials for the golden set
+        id: creds
+        if: ${{ vars.GOLDEN_SET_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.GOLDEN_SET_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Quality gate (§5.10)
+        if: ${{ steps.creds.outcome == 'success' }}
+        run: |
+          uv run python manage.py migrate --noinput
+          cd .. && uv run --project backend python -m tests.golden.run_eval --check
+        working-directory: backend/api
+        env:
+          AWS_ACCESS_KEY_ID: ""
+          AWS_SECRET_ACCESS_KEY: ""
+
+      - name: Report that the quality gate did not run
+        if: ${{ steps.creds.outcome != 'success' }}
+        run: |
+          echo "::warning title=Quality gate skipped::GOLDEN_SET_ROLE_ARN is not configured, so the golden bid sets could not be fetched and no extraction quality was measured. This build is green on lint and tests only."
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+      - run: terraform fmt -check -recursive
+        working-directory: infra
+      # validate, never plan: plan needs credentials and remote state, and CI has
+      # no business touching either. Syntax and type errors are caught here; cost
+      # and drift are caught by a human reading a plan.
+      - name: Validate every environment
+        run: |
+          for env in dev staging prod; do
+            echo "── $env ──"
+            terraform -chdir="infra/envs/$env" init -backend=false -input=false
+            terraform -chdir="infra/envs/$env" validate
+          done
