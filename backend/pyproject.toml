@@ -1,0 +1,73 @@
+[project]
+name = "cbc-copilot-backend"
+version = "0.1.0"
+description = "CBC Estimating & Pricing Copilot — Django API + FastAPI pipeline"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # ── Django API (§3.1) ──
+    "django>=5.0,<6.0",
+    "djangorestframework",
+    "django-cors-headers",
+    "django-filter",
+    "drf-spectacular",
+    "psycopg[binary,pool]",
+    "gunicorn",
+    "uvicorn[standard]",
+    # ── Pipeline worker (§3.1) ──
+    "fastapi",
+    "sqlalchemy",
+    "boto3",
+    "pymupdf",
+    "pikepdf",
+    "pillow",
+    "rapidfuzz",
+    # ── Quote rendering (C7) ──
+    "weasyprint",
+    # ── Observability (§11.5) ──
+    "python-json-logger",
+    "aws-xray-sdk",
+]
+
+[project.optional-dependencies]
+# §11.1: the Direct-API escape hatch. Local development ONLY — shared/config.py
+# refuses to construct a NIM client unless ENVIRONMENT=local (decision D-a).
+local-llm = [
+    "openai>=1.0",
+]
+test = [
+    "pytest",
+    "ruff",
+    "pytest-django",
+    "pytest-asyncio",
+    "pytest-mock",
+    "pytest-cov",
+    "factory-boy",
+    "httpx",
+    "numpy",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.local"
+pythonpath = ["api", "."]
+asyncio_mode = "auto"
+testpaths = ["api", "tests"]
+# Django app tests live in <app>/tests.py, which does NOT match pytest's default
+# test_*.py glob — so every one of them was silently uncollected.
+python_files = ["test_*.py", "tests.py"]
+markers = [
+    "integration: requires the Docker stack (make up)",
+    "aws: makes real AWS calls; skipped unless CBC_ALLOW_AWS_TESTS=1",
+]
+filterwarnings = [
+    "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+exclude = [".venv", "*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

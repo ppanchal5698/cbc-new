@@ -1,0 +1,146 @@
+# Local development stack (§8.3).
+#
+# Full offline loop: Textract and Bedrock are the only services stubbed. Set
+# FAKE_OCR=1 to replay a recorded OCR JSON so the whole pipeline runs with no AWS
+# calls and no spend.
+#
+# The frontend is a separate deliverable and is deliberately not a service here —
+# `docker compose up` must bring up a healthy backend on its own.
+
+name: cbc-copilot
+
+x-aws-local: &aws-local
+  AWS_ENDPOINT_URL: http://ministack:4566
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_REGION: us-east-1
+
+services:
+  postgres:
+    # Postgres 17 (D2). Plain image: pgvector was removed with the embedding-based
+    # matcher — matching is deterministic and explainable (§6.1), so there is no
+    # vector column left to support.
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: cbccopilot
+    ports:
+      # 5432 is already taken on some dev machines by a native Postgres
+      # install, and Docker silently loses that race. 55432 avoids the collision;
+      # inside the compose network services still talk to postgres:5432.
+      - "55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cbccopilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ministack:
+    # S3 + SQS + SNS emulation for the offline loop.
+    image: ministackorg/ministack:latest
+    environment:
+      MINISTACK_REGION: us-east-1
+      MINISTACK_SERVICES: s3,sqs,sns,ssm
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    ports:
+      - "4566:4566"
+    # No healthcheck: the image ships no curl or wget, so an HTTP probe can never
+    # pass. The bootstrap job below retries until the emulator answers, which is a
+    # stronger readiness signal anyway — it proves S3, SQS, and SNS all work.
+
+  # One-shot: create the buckets, queues, DLQ, and SNS topic the pipeline expects.
+  # Runs to completion, then exits; api and pipeline wait on it.
+  bootstrap:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.pipeline
+      target: dev
+    command: python -m pipeline.bootstrap_local
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    env_file: [.env]
+    environment:
+      <<: *aws-local
+      ENVIRONMENT: local
+      PYTHONPATH: /app:/app/api
+    depends_on:
+      ministack:
+        condition: service_started
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.api
+      # Local builds include the test extra; CI and deploys build `runtime`.
+      target: dev
+    command: >
+      bash -c "python manage.py migrate --noinput &&
+               python manage.py seed_reference &&
+               python manage.py runserver 0.0.0.0:8000"
+    working_dir: /app/api
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    env_file: [.env]
+    environment:
+      <<: *aws-local
+      ENVIRONMENT: local
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/cbccopilot
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      ALLOWED_HOSTS: api,localhost,127.0.0.1
+      PYTHONPATH: /app:/app/api
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health/')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+
+  pipeline:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.pipeline
+      target: dev
+    command: uvicorn pipeline.main:app --host 0.0.0.0 --port 8001 --reload
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8001:8001"
+    env_file: [.env]
+    environment:
+      <<: *aws-local
+      ENVIRONMENT: local
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/cbccopilot
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      PYTHONPATH: /app:/app/api
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:

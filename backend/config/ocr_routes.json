@@ -1,0 +1,129 @@
+{
+  "_comment": [
+    "OCR routing table (§4.4). CONFIGURATION, NOT CODE — Risk R1 requires this to be",
+    "data so that Open Item 9 lands as a config change rather than a code change.",
+    "",
+    "If CBC answers that fire ratings sometimes live in DRAWING margin notes, change",
+    "DRAWING.route from SKIP to TEXTRACT_TEXT here and redeploy. Nothing in Python",
+    "needs to move.",
+    "",
+    "Cost per 1,000 pages: TEXTRACT_TABLES $15 · TEXTRACT_TEXT $1.50 · NATIVE_TEXT $0",
+    "· SKIP $0. Getting this mapping right is bottleneck B1 — a 200-page plan set with",
+    "6 schedule pages costs $0.13 triaged versus $3.00 naive."
+  ],
+  "version": "v1",
+  "routes": {
+    "DOOR_SCHEDULE": {
+      "route": "TEXTRACT_TABLES",
+      "reason": "cell/row/column structure is the whole point; Layout is free when Tables is on"
+    },
+    "HARDWARE_SCHEDULE": {
+      "route": "TEXTRACT_TABLES",
+      "reason": "hardware-set definitions are tabular and are cross-referenced by the door schedule"
+    },
+    "FRAME_SCHEDULE": {
+      "route": "TEXTRACT_TABLES",
+      "reason": "a fire rating found here rather than the door schedule is a recordable finding (§5.8)"
+    },
+    "FINISH_SCHEDULE": {
+      "route": "TEXTRACT_TABLES",
+      "reason": "finish legends resolve US/BHMA codes for the openings grid"
+    },
+    "SPEC_TEXT": {
+      "route": "TEXTRACT_TEXT",
+      "native_text_route": "NATIVE_TEXT",
+      "reason": "prose has no cells; DetectDocumentText is 10x cheaper than Tables"
+    },
+    "DRAWING": {
+      "route": "SKIP",
+      "reason": "raster only, for the viewer. Reconsider ONLY if CBC confirms ratings live in margin notes (Open Item 9)"
+    },
+    "TITLE": {
+      "route": "SKIP",
+      "reason": "cover sheet carries no schedule data"
+    },
+    "INDEX": {
+      "route": "SKIP",
+      "reason": "sheet index references schedules but contains none"
+    },
+    "UNKNOWN": {
+      "route": "SKIP",
+      "reason": "classification did not resolve this page; surfaced in the review UI for an estimator decision"
+    }
+  },
+  "_native_text_note": [
+    "A page whose class allows it AND whose text layer is RICH takes",
+    "native_text_route instead of route — the word positions and reading order are",
+    "already in the file, so it costs nothing. Schedule pages are the exception:",
+    "word positions alone do not give cell/row/column structure, so they still go to",
+    "Textract even when the text layer is rich (§4.2)."
+  ],
+  "cost_per_page_usd": {
+    "TEXTRACT_TABLES": 0.015,
+    "TEXTRACT_TEXT": 0.0015,
+    "NATIVE_TEXT": 0.0,
+    "SKIP": 0.0
+  },
+  "anchors": {
+    "_comment": "Tier 3 keyword anchors (§4.3). Matching is whitespace- and case-insensitive and tolerates letter-spaced CAD title text such as 'D O O R   S C H E D U L E'.",
+    "DOOR_SCHEDULE": [
+      "DOOR SCHEDULE",
+      "DOOR AND FRAME SCHEDULE",
+      "OPENING SCHEDULE",
+      "DOOR/FRAME SCHEDULE"
+    ],
+    "HARDWARE_SCHEDULE": [
+      "HARDWARE SCHEDULE",
+      "HARDWARE SETS",
+      "HARDWARE GROUP",
+      "HARDWARE SET",
+      "DIVISION 08",
+      "SECTION 08 71 00",
+      "DOOR HARDWARE"
+    ],
+    "FRAME_SCHEDULE": [
+      "FRAME SCHEDULE",
+      "FRAME TYPES"
+    ],
+    "FINISH_SCHEDULE": [
+      "FINISH SCHEDULE",
+      "ROOM FINISH SCHEDULE"
+    ],
+    "INDEX": [
+      "SHEET INDEX",
+      "DRAWING INDEX",
+      "INDEX OF DRAWINGS",
+      "TABLE OF CONTENTS"
+    ],
+    "TITLE": [
+      "COVER SHEET",
+      "TITLE SHEET"
+    ],
+    "SPEC_TEXT": [
+      "SPECIFICATION",
+      "GENERAL NOTES",
+      "PART 1 - GENERAL",
+      "PART 2 - PRODUCTS",
+      "PART 3 - EXECUTION"
+    ]
+  },
+  "sheet_number_prefixes": {
+    "_comment": "Tier 2 title-block hints (§4.3). Sheet numbering conventions vary by office, so these RAISE the score for a class rather than deciding it outright.",
+    "A0": "INDEX",
+    "A6": "DOOR_SCHEDULE",
+    "A7": "DOOR_SCHEDULE",
+    "A8": "HARDWARE_SCHEDULE",
+    "G0": "TITLE"
+  },
+  "thresholds": {
+    "_comment": "Risk R12 weights recall far above precision: a false positive costs $0.015, a false negative costs a missing opening. min_keyword_confidence is deliberately low for that reason.",
+    "min_keyword_confidence": 0.55,
+    "min_model_confidence": 0.6,
+    "vector_outlined_max_words": 20,
+    "vector_outlined_min_paths": 500,
+    "rich_text_min_words": 50,
+    "sparse_text_max_words": 50,
+    "drawing_min_vector_paths": 500,
+    "_drawing_note": "A page that matched no schedule anchor but carries thousands of vector paths is a drawing sheet, not an unresolved page. Both route to SKIP, but the distinction matters: UNKNOWN is surfaced to the estimator as 'the system did not read this' (Risk R12), and burying 22 correctly-skipped drawings in that list hides the pages that genuinely need a human look."
+  }
+}

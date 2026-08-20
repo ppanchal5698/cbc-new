@@ -1,0 +1,131 @@
+{# Customer-facing quote (FR-10).
+
+   Structurally correct per §6.2 step 4 and deliberately plain: the real CBC
+   layout is blocked on open item Q10 (the existing quote workbook has not been
+   provided), so swapping it in should be a template change and nothing more.
+
+   Every figure below is read from stored fields. This template performs no
+   arithmetic — a PDF that recomputed its own totals could disagree with the
+   quote it claims to represent (§6.2 step 5). #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Quotation {{ quote.id }}</title>
+  <style>
+    @page { size: Letter; margin: 0.75in; @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; } }
+    body { font-family: "DejaVu Sans", Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #111; }
+    h1 { font-size: 16pt; margin: 0 0 2pt; }
+    h2 { font-size: 11pt; margin: 16pt 0 4pt; padding-bottom: 2pt; border-bottom: 1.5pt solid #333; }
+    .meta { width: 100%; margin-bottom: 14pt; }
+    .meta td { padding: 1pt 0; vertical-align: top; }
+    .meta .label { color: #555; width: 1.4in; }
+    table.lines { width: 100%; border-collapse: collapse; margin-bottom: 6pt; }
+    table.lines th { background: #ececec; border: 0.5pt solid #999; padding: 3pt 4pt; text-align: left; font-size: 8.5pt; }
+    table.lines td { border: 0.5pt solid #bbb; padding: 3pt 4pt; }
+    .num { text-align: right; white-space: nowrap; }
+    .subtotal td { background: #f6f6f6; font-weight: bold; border-top: 1pt solid #666; }
+    table.totals { width: 3.2in; margin-left: auto; border-collapse: collapse; margin-top: 8pt; }
+    table.totals td { padding: 3pt 4pt; }
+    table.totals .grand { border-top: 1.5pt solid #333; font-weight: bold; font-size: 11pt; }
+    .flag { color: #8a5a00; font-size: 7.5pt; }
+    .terms { margin-top: 18pt; font-size: 8pt; color: #333; }
+    .terms li { margin-bottom: 2pt; }
+    .tbd { font-style: italic; color: #555; }
+  </style>
+</head>
+<body>
+
+  <h1>Quotation</h1>
+  <div style="font-size:9pt;color:#555;">Construction Building Components &mdash; a division of The Hamilton Parker Company</div>
+
+  <table class="meta">
+    <tr><td class="label">Project</td><td>{{ project.name }}</td>
+        <td class="label">Quote no.</td><td>{{ quote.id }}</td></tr>
+    <tr><td class="label">Prepared for</td><td>{{ recipient_email }}</td>
+        <td class="label">Date</td><td>{{ quote.approved_at|default:quote.created_at|date:"j F Y" }}</td></tr>
+    {% if project.general_contractor %}
+    <tr><td class="label">Contractor</td><td>{{ project.general_contractor }}</td>
+        <td class="label">Brand</td><td>{{ project.brand|default:"&mdash;" }}</td></tr>
+    {% endif %}
+    {% if project.architect %}
+    <tr><td class="label">Architect</td><td colspan="3">{{ project.architect }}</td></tr>
+    {% endif %}
+  </table>
+
+  {% for group in groups %}
+    <h2>{{ group.title }}</h2>
+    <table class="lines">
+      <thead>
+        <tr>
+          <th style="width:0.7in;">Opening</th>
+          <th>Description</th>
+          <th class="num" style="width:0.5in;">Qty</th>
+          <th style="width:0.4in;">Unit</th>
+          <th class="num" style="width:0.9in;">Unit price</th>
+          <th class="num" style="width:1.0in;">Extended</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in group.lines %}
+        <tr>
+          <td>{{ line.opening.door_number|default:"&mdash;" }}</td>
+          <td>
+            {{ line.description }}
+            {% if line.is_direct_equal %}<div class="flag">Direct equal proposed{% if line.substitution_note %}: {{ line.substitution_note }}{% endif %}</div>{% endif %}
+            {% if line.cost_is_stale %}<div class="flag">Price may be out of date &mdash; refresh before order</div>{% endif %}
+          </td>
+          <td class="num">{{ line.quantity|floatformat:2 }}</td>
+          <td>{{ line.unit }}</td>
+          <td class="num">{{ line.sale_each|floatformat:2 }}</td>
+          <td class="num">{{ line.extended|floatformat:2 }}</td>
+        </tr>
+        {% endfor %}
+        <tr class="subtotal">
+          <td colspan="5">Subtotal &mdash; {{ group.title }}</td>
+          <td class="num">{{ group.subtotal|floatformat:2 }}</td>
+        </tr>
+      </tbody>
+    </table>
+  {% endfor %}
+
+  {# Freight is a LINE with a nullable amount, never a computed number (C11).
+     It renders TBD unless an estimator entered a value. #}
+  <h2>{{ freight_lines|length|yesno:"Freight,Freight" }}</h2>
+  <table class="lines">
+    <tbody>
+      <tr>
+        <td>Freight</td>
+        <td class="num" style="width:1.0in;">
+          {% if freight_display == "TBD" %}<span class="tbd">TBD</span>{% else %}{{ freight_display }}{% endif %}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td>Subtotal</td><td class="num">{{ subtotal_sale|floatformat:2 }}</td></tr>
+    <tr>
+      <td>Freight</td>
+      <td class="num">{% if freight_display == "TBD" %}<span class="tbd">TBD</span>{% else %}{{ freight_display }}{% endif %}</td>
+    </tr>
+    {# Sales tax applies ONLY in Ohio and Kentucky; the other 48 states and Canada
+       are untaxed because the sale is to a GC or corporation (§1.1). #}
+    {% if tax_jurisdiction and tax_amount %}
+    <tr><td>Sales tax &mdash; {{ tax_jurisdiction }} ({{ tax_rate_pct|floatformat:3 }}%)</td><td class="num">{{ tax_amount|floatformat:2 }}</td></tr>
+    {% else %}
+    <tr><td>Sales tax</td><td class="num">Not applicable</td></tr>
+    {% endif %}
+    <tr class="grand"><td>Total</td><td class="num">{{ grand_total|floatformat:2 }}</td></tr>
+  </table>
+
+  <div class="terms">
+    <strong>Terms</strong> (rev. {{ terms_version }})
+    <ul>
+      {% for term in terms %}<li>{{ term }}</li>{% endfor %}
+    </ul>
+    {% if quote.notes %}<p><strong>Notes.</strong> {{ quote.notes|linebreaksbr }}</p>{% endif %}
+  </div>
+
+</body>
+</html>

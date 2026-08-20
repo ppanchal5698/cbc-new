@@ -1,0 +1,77 @@
+# Django + DRF API image (§8.1, §8.2).
+#
+# Deliberately separate from Dockerfile.pipeline: the pipeline needs PyMuPDF,
+# pikepdf, and image libraries; the API does not. Separate images keep the API
+# small and its attack surface narrow.
+#
+# Built for linux/arm64 to run on the Graviton hosts in §3.1 (~19% cheaper for
+# equivalent capacity). Build with:
+#   docker buildx build --platform linux/arm64 -f Dockerfile.api .
+
+FROM python:3.11-slim-bookworm AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    UV_SYSTEM_PYTHON=1
+
+WORKDIR /app
+
+# libpq for psycopg; the pango/cairo/gdk-pixbuf set is WeasyPrint's hard runtime
+# requirement (C7) — without them `import weasyprint` raises OSError at start-up,
+# not at render time.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libcairo2 \
+        libgdk-pixbuf-2.0-0 \
+        libffi8 \
+        shared-mime-info \
+        fonts-dejavu-core \
+        curl \
+        procps \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Install from the LOCKFILE, not from pyproject: `uv pip install -r pyproject.toml`
+# resolves fresh on every build, so two builds of the same commit can ship
+# different dependency versions.
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt \
+    && uv pip install --system -r /tmp/requirements.txt
+
+COPY . .
+
+# Non-root. The API host sits in a public subnet with no inbound rules (§10.3),
+# so the container is the last boundary rather than the only one.
+RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
+USER appuser
+
+WORKDIR /app/api
+EXPOSE 8000
+
+# 3 Uvicorn workers = (2 x vCPU) - 1 on the t4g.large in §3.4. OCR and LLM calls
+# never block a request thread because they do not happen here at all.
+CMD ["gunicorn", "config.asgi:application", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "3", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-"]
+
+
+# ---------------------------------------------------------------------------
+# Development image: the runtime plus the test extra.
+#
+# `make test` runs inside the stack (§8.5), which needs pytest — but shipping a
+# test runner to production widens the image and its attack surface for no
+# benefit. compose builds this target locally; CI and deploys build `runtime`.
+# ---------------------------------------------------------------------------
+FROM runtime AS dev
+
+USER root
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --extra test --no-emit-project -o /tmp/dev-requirements.txt     && uv pip install --system -r /tmp/dev-requirements.txt
+USER appuser

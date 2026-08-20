@@ -1,0 +1,63 @@
+# FastAPI pipeline worker image (§8.1, §8.2).
+#
+# Carries PyMuPDF, pikepdf, and Pillow for preprocessing and rasterisation. Runs
+# on its own EC2 instance (D9): the worker's memory profile is spiky — a 200-page
+# plan set, rasterisation, and buffered OCR JSON all peak together — and
+# colocating it with the API means one large bid set degrades every estimator's
+# page loads.
+#
+# Built for linux/arm64 (§8.2). Build with:
+#   docker buildx build --platform linux/arm64 -f Dockerfile.pipeline .
+
+FROM python:3.11-slim-bookworm AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    UV_SYSTEM_PYTHON=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+        libjpeg62-turbo \
+        libopenjp2-7 \
+        zlib1g \
+        libwebp7 \
+        libqpdf29 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt \
+    && uv pip install --system -r /tmp/requirements.txt
+
+COPY . .
+
+RUN useradd --create-home --uid 10001 appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8001
+
+# Run from /app, not /app/pipeline: main.py imports its consumers relatively, so
+# `uvicorn main:app` from inside the package directory fails with ImportError.
+# PYTHONPATH carries api/ because the worker uses the Django ORM for writes.
+ENV PYTHONPATH=/app:/app/api
+CMD ["uvicorn", "pipeline.main:app", "--host", "0.0.0.0", "--port", "8001"]
+
+
+# ---------------------------------------------------------------------------
+# Development image: the runtime plus the test extra.
+#
+# `make test` runs inside the stack (§8.5), which needs pytest — but shipping a
+# test runner to production widens the image and its attack surface for no
+# benefit. compose builds this target locally; CI and deploys build `runtime`.
+# ---------------------------------------------------------------------------
+FROM runtime AS dev
+
+USER root
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --extra test --no-emit-project -o /tmp/dev-requirements.txt     && uv pip install --system -r /tmp/dev-requirements.txt
+USER appuser
