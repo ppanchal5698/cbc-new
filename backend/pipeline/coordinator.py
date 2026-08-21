@@ -421,6 +421,7 @@ def _extract_and_link(document) -> None:
 
 def handle_quote_export(payload: dict) -> None:
     """Render an approved quote off the request thread."""
+    from common import mail
     from django.utils import timezone
     from projects.storage_ops import put_derived
     from quotes.models import Quote
@@ -445,9 +446,39 @@ def handle_quote_export(payload: dict) -> None:
     quote.exported_at = timezone.now()
     quote.status = QuoteStatus.EXPORTED.value
     quote.save(update_fields=["export_key", "exported_at", "status", "updated_at"])
+
+    # FR-10: route the finished quote to whoever started the job. Until now this
+    # recorded the recipient and logged it, which reads as delivery in every status
+    # field and every log line without a message ever being sent.
+    #
+    # The PDF is already durable in S3 at this point, so a mail failure is logged
+    # and the export stands rather than being rolled back — the artefact exists and
+    # can be sent again, and losing it to a transient SMTP error would be the worse
+    # outcome. `mail.send` never raises.
+    recipient = quote.exported_to_email or quote.project.initiator_email
+    delivered = mail.send(
+        subject=f"CBC quote for {quote.project.name}",
+        body="\n".join([
+            "The attached quote has been approved and is ready for review.",
+            "",
+            f"Project: {quote.project.name}",
+            f"Quote:   {quote.id}",
+            "",
+            "This message was sent by CBC Copilot.",
+            "",
+        ]),
+        to=recipient,
+        attachment=(f"quote-{quote.id}.pdf", pdf_bytes, "application/pdf"),
+    )
+
     log.info(
         "quote exported",
-        extra={"quote_id": str(quote.id), "recipient": quote.exported_to_email, "key": key},
+        extra={
+            "quote_id": str(quote.id),
+            "recipient": recipient,
+            "key": key,
+            "emailed": delivered,
+        },
     )
 
 

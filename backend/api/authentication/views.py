@@ -17,14 +17,21 @@ that reveals nothing to someone who already proved they hold the password.
 someone deliberately wrote otherwise on it.
 """
 
+from common import mail
+from django.conf import settings
 from django.contrib.auth import (
     authenticate,
     get_user_model,
     login,
     logout,
+    password_validation,
     update_session_auth_hash,
 )
+from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -35,6 +42,8 @@ from rest_framework.views import APIView
 from .serializers import (
     ChangePasswordSerializer,
     LoginSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     ProfileSerializer,
     SignupSerializer,
 )
@@ -51,6 +60,16 @@ AWAITING_APPROVAL = (
     "This account is awaiting approval. An administrator has to activate it "
     "before you can sign in."
 )
+
+#: Identical whether or not the address has an account. Same reasoning as signup.
+RESET_REQUESTED = (
+    "If that address has an active account, a password reset link is on its way. "
+    "The link expires in one hour."
+)
+
+#: A token is single-use and short-lived, so an expired or replayed one is an
+#: ordinary event, not an error worth distinguishing from a forged one.
+RESET_LINK_INVALID = "This reset link is invalid or has expired. Request a new one."
 
 #: Identical whether or not the email was already registered.
 SIGNUP_RECEIVED = (
@@ -216,3 +235,110 @@ class ChangePasswordView(APIView):
         Token.objects.filter(user=request.user).delete()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PasswordResetRequestView(APIView):
+    """
+    Ask for a reset link.
+
+    Answers identically for a registered address, an unknown one, and an account
+    still awaiting approval. Anything else turns this endpoint into a way to test
+    whether a given person works at CBC — and it is the one endpoint an attacker
+    can hit without any credential at all.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+    throttle_scope = "password_reset"
+
+    @extend_schema(request=PasswordResetRequestSerializer, responses={202: None})
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data["email"]
+
+        # Active only. An unapproved account has no access to reset, and mailing
+        # one would confirm to a stranger that the address is registered.
+        user = User.objects.filter(email__iexact=email, is_active=True).first()
+        if user is not None:
+            token = default_token_generator.make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            link = settings.PASSWORD_RESET_URL.format(uid=uid, token=token)
+
+            mail.send(
+                subject="Reset your CBC Copilot password",
+                body="\n".join(
+                    [
+                        f"Hello {user.get_short_name()},",
+                        "",
+                        "Someone asked to reset the password for this CBC Copilot "
+                        "account. Open the link below to choose a new one:",
+                        "",
+                        link,
+                        "",
+                        "The link works once and expires in one hour.",
+                        "",
+                        "If this was not you, you can ignore this message — nothing "
+                        "has changed and your current password still works.",
+                        "",
+                    ]
+                ),
+                to=user.email,
+            )
+
+        return Response({"detail": RESET_REQUESTED}, status=status.HTTP_202_ACCEPTED)
+
+
+class PasswordResetConfirmView(APIView):
+    """
+    Redeem a reset link.
+
+    Django's ``default_token_generator`` does the work: the token is derived from
+    the user's current password hash and ``last_login``, so it stops working the
+    moment either changes. That makes it single-use without a table to track, and
+    invalidates every outstanding link as soon as one is redeemed.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+    throttle_scope = "password_reset"
+
+    @extend_schema(request=PasswordResetConfirmSerializer, responses={204: None})
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        user = self._user_from_uid(data["uid"])
+        if user is None or not default_token_generator.check_token(user, data["token"]):
+            # One message for a malformed uid, an unknown user, an inactive one,
+            # a forged token and an expired token alike.
+            return Response(
+                {"detail": RESET_LINK_INVALID}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validated only after the token proves the caller owns the mailbox, so the
+        # error messages cannot be used to probe the password policy anonymously.
+        try:
+            password_validation.validate_password(data["new_password"], user)
+        except DjangoValidationError as exc:
+            return Response(
+                {"new_password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        user.set_password(data["new_password"])
+        user.save(update_fields=["password"])
+
+        # Same reasoning as change-password: a token minted against the old
+        # password must not outlive it.
+        Token.objects.filter(user=user).delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @staticmethod
+    def _user_from_uid(uid: str):
+        try:
+            pk = force_str(urlsafe_base64_decode(uid))
+        except (TypeError, ValueError, OverflowError, UnicodeDecodeError):
+            return None
+        return User.objects.filter(pk=pk, is_active=True).first()

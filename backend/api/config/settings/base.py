@@ -10,6 +10,8 @@ import os
 import sys
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # backend/api
 REPO_BACKEND = BASE_DIR.parent                            # backend/
 
@@ -19,7 +21,7 @@ REPO_BACKEND = BASE_DIR.parent                            # backend/
 if str(REPO_BACKEND) not in sys.path:
     sys.path.insert(0, str(REPO_BACKEND))
 
-from shared.config import PROD, get_settings  # noqa: E402
+from shared.config import PROD, STAGING, get_settings  # noqa: E402
 
 settings_obj = get_settings()
 
@@ -176,9 +178,41 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# ---------------------------------------------------------------------------
+# Email
+# ---------------------------------------------------------------------------
+#
+# SMTP through CBC's existing mail provider rather than SES. A password reset
+# arriving from a domain the recipient already trusts is worth more than the
+# per-message saving, and it skips SES identity verification and the sandbox
+# entirely.
+#
+# The console backend stays the default so local development never silently
+# depends on a mail server — it prints the message, link included, to stdout.
+
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
 )
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") not in ("0", "false", "False")
+EMAIL_TIMEOUT = 15
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "cbc-copilot@example.invalid")
+
+#: Where the reset link points. The UI is a separate deliverable (§8.1), so this
+#: is configuration rather than a hardcoded path — and the placeholders are filled
+#: by ``str.format(uid=..., token=...)``.
+PASSWORD_RESET_URL = os.environ.get(
+    "PASSWORD_RESET_URL", "http://localhost:3000/reset-password?uid={uid}&token={token}"
+)
+
+#: One hour, not Django's three-day default. This link is a bearer credential for
+#: an account that can read client drawings and CBC's margins; three days of
+#: validity sitting in an inbox is three days of exposure for no convenience worth
+#: having.
+PASSWORD_RESET_TIMEOUT = int(os.environ.get("PASSWORD_RESET_TIMEOUT", 60 * 60))
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +251,8 @@ REST_FRAMEWORK = {
         "signup": "5/hour",
         "token": "10/min",
         "password": "10/hour",
+        # The only endpoints an attacker can reach with no credential at all.
+        "password_reset": "5/hour",
     },
 }
 
@@ -283,3 +319,17 @@ if ENVIRONMENT == PROD:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     X_FRAME_OPTIONS = "DENY"
     SECURE_CONTENT_TYPE_NOSNIFF = True
+
+if ENVIRONMENT in (STAGING, PROD):
+    # The console backend prints mail to stdout and delivers nothing. Reaching a
+    # deployed environment with it configured means password resets and approved
+    # quotes are silently dropped while every response still says 200 — the
+    # failure mode §8.4 exists to refuse.
+    if "console" in EMAIL_BACKEND or "locmem" in EMAIL_BACKEND:
+        raise ImproperlyConfigured(
+            f"EMAIL_BACKEND={EMAIL_BACKEND} in ENVIRONMENT={ENVIRONMENT}. That backend "
+            "delivers nothing. Set the SMTP backend and EMAIL_HOST; see docs/aws-setup.md."
+        )
+    for _name in ("EMAIL_HOST", "DEFAULT_FROM_EMAIL", "PASSWORD_RESET_URL"):
+        if not globals().get(_name):
+            raise ImproperlyConfigured(f"{_name} must be set in ENVIRONMENT={ENVIRONMENT}")

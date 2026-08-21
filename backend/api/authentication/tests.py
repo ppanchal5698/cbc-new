@@ -88,6 +88,12 @@ PUBLIC_ENDPOINTS = {
     "/api/auth/signup/",       # requesting access, which grants none
     "/api/auth/login/",        # the door
     "/api/auth/token/",        # the same door, for scripts
+    # Reset is reachable precisely by people who cannot authenticate. It grants
+    # nothing on its own: the request only mails a link to an address already on
+    # file, and the confirm endpoint needs a token derived from the current
+    # password hash.
+    "/api/auth/password-reset/",
+    "/api/auth/password-reset/confirm/",
 }
 
 DENIED = (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)

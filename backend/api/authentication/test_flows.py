@@ -22,6 +22,8 @@ LOGOUT = "/api/auth/logout/"
 TOKEN = "/api/auth/token/"
 ME = "/api/auth/me/"
 CHANGE_PASSWORD = "/api/auth/change-password/"
+RESET = "/api/auth/password-reset/"
+RESET_CONFIRM = "/api/auth/password-reset/confirm/"
 
 GOOD_PASSWORD = "correct-horse-battery-7"
 
@@ -250,6 +252,136 @@ class TestTokensForScripts:
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert not Token.objects.exists()
+
+
+class TestPasswordReset:
+    """
+    The one flow an attacker can drive with no credential at all, so most of what
+    is asserted here is what it refuses to say.
+    """
+
+    def _request_and_capture_link(self, api_client, email, mailoutbox, settings):
+        settings.PASSWORD_RESET_URL = "https://app.test/reset?uid={uid}&token={token}"
+        api_client.post(RESET, {"email": email}, format="json")
+        assert len(mailoutbox) == 1
+        body = mailoutbox[0].body
+        line = next(ln for ln in body.splitlines() if ln.startswith("https://app.test/reset"))
+        query = line.split("?", 1)[1]
+        parts = dict(pair.split("=", 1) for pair in query.split("&"))
+        return parts["uid"], parts["token"]
+
+    def test_a_known_and_an_unknown_address_answer_identically(self, api_client, user, mailoutbox):
+        known = api_client.post(RESET, {"email": user.email}, format="json")
+        unknown = api_client.post(RESET, {"email": "nobody@cbc.test"}, format="json")
+
+        assert known.status_code == unknown.status_code == status.HTTP_202_ACCEPTED
+        assert known.data == unknown.data
+        # ...and only one of them actually sent anything.
+        assert [m.to for m in mailoutbox] == [[user.email]]
+
+    def test_an_unapproved_account_gets_no_link(self, api_client, mailoutbox):
+        """
+        It has no access to reset, and mailing it would confirm to a stranger that
+        the address is registered.
+        """
+        api_client.post(SIGNUP, {"email": "new@cbc.test", "password": GOOD_PASSWORD}, format="json")
+        mailoutbox.clear()
+
+        response = api_client.post(RESET, {"email": "new@cbc.test"}, format="json")
+        assert response.status_code == status.HTTP_202_ACCEPTED
+        assert mailoutbox == []
+
+    def test_the_link_resets_the_password(self, api_client, user, mailoutbox, settings):
+        uid, token = self._request_and_capture_link(api_client, user.email, mailoutbox, settings)
+
+        response = api_client.post(
+            RESET_CONFIRM, {"uid": uid, "token": token, "new_password": GOOD_PASSWORD}, format="json"
+        )
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+
+        user.refresh_from_db()
+        assert user.check_password(GOOD_PASSWORD)
+        assert api_client.post(
+            LOGIN, {"email": user.email, "password": GOOD_PASSWORD}, format="json"
+        ).status_code == status.HTTP_200_OK
+
+    def test_a_link_works_only_once(self, api_client, user, mailoutbox, settings):
+        """
+        The token derives from the password hash, so redeeming it invalidates it —
+        and every other outstanding link at the same time.
+        """
+        uid, token = self._request_and_capture_link(api_client, user.email, mailoutbox, settings)
+        api_client.post(
+            RESET_CONFIRM, {"uid": uid, "token": token, "new_password": GOOD_PASSWORD}, format="json"
+        )
+
+        replay = api_client.post(
+            RESET_CONFIRM,
+            {"uid": uid, "token": token, "new_password": "another-password-42"},
+            format="json",
+        )
+        assert replay.status_code == status.HTTP_400_BAD_REQUEST
+        user.refresh_from_db()
+        assert user.check_password(GOOD_PASSWORD), "the first reset still stands"
+
+    def test_a_forged_token_is_refused(self, api_client, user, mailoutbox, settings):
+        uid, _ = self._request_and_capture_link(api_client, user.email, mailoutbox, settings)
+        response = api_client.post(
+            RESET_CONFIRM,
+            {"uid": uid, "token": "not-a-real-token", "new_password": GOOD_PASSWORD},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_a_malformed_uid_is_refused_the_same_way(self, api_client):
+        """A junk uid must not 500; it is an ordinary rejection."""
+        response = api_client.post(
+            RESET_CONFIRM,
+            {"uid": "!!!not-base64!!!", "token": "x", "new_password": GOOD_PASSWORD},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_the_new_password_must_pass_the_validators(self, api_client, user, mailoutbox, settings):
+        uid, token = self._request_and_capture_link(api_client, user.email, mailoutbox, settings)
+        response = api_client.post(
+            RESET_CONFIRM, {"uid": uid, "token": token, "new_password": "123"}, format="json"
+        )
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_a_reset_revokes_issued_tokens(self, api_client, user, mailoutbox, settings):
+        Token.objects.create(user=user)
+        uid, token = self._request_and_capture_link(api_client, user.email, mailoutbox, settings)
+        api_client.post(
+            RESET_CONFIRM, {"uid": uid, "token": token, "new_password": GOOD_PASSWORD}, format="json"
+        )
+        assert not Token.objects.filter(user=user).exists()
+
+    def test_the_email_carries_a_usable_link_and_no_password(self, api_client, user, mailoutbox, settings):
+        self._request_and_capture_link(api_client, user.email, mailoutbox, settings)
+        body = mailoutbox[0].body
+        assert "https://app.test/reset?uid=" in body
+        assert "expires in one hour" in body
+        assert user.password not in body
+
+
+class TestEmailDelivery:
+    def test_send_never_raises_when_the_transport_fails(self, settings):
+        """
+        A password reset that 500s because SMTP timed out tells an anonymous caller
+        the address exists. Delivery is best-effort by design.
+        """
+        from common import mail
+
+        settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+        settings.EMAIL_HOST = "127.0.0.1"
+        settings.EMAIL_PORT = 1  # nothing listens here
+        assert mail.send(subject="s", body="b", to="someone@cbc.test") is False
+
+    def test_send_refuses_an_empty_recipient(self):
+        from common import mail
+
+        assert mail.send(subject="s", body="b", to="") is False
 
 
 class TestTheUserModel:
