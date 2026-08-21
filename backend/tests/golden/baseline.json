@@ -19,6 +19,149 @@
       "estimated_cost_usd": "0.1200",
       "naive_cost_usd": "0.9750"
     },
-    "extraction": null
+    "extraction": {
+      "size_raw": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "absent_accuracy": null,
+        "escape_rate": null,
+        "counts": {
+          "correct": 0,
+          "wrong": 4,
+          "missed": 0,
+          "absent_correct": 0,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      },
+      "width_inches": {
+        "precision": null,
+        "recall": 0.0,
+        "absent_accuracy": null,
+        "escape_rate": null,
+        "counts": {
+          "correct": 0,
+          "wrong": 0,
+          "missed": 4,
+          "absent_correct": 0,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      },
+      "height_inches": {
+        "precision": null,
+        "recall": 0.0,
+        "absent_accuracy": null,
+        "escape_rate": null,
+        "counts": {
+          "correct": 0,
+          "wrong": 0,
+          "missed": 4,
+          "absent_correct": 0,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      },
+      "handing": {
+        "precision": null,
+        "recall": null,
+        "absent_accuracy": 1.0,
+        "escape_rate": 0.0,
+        "counts": {
+          "correct": 0,
+          "wrong": 0,
+          "missed": 0,
+          "absent_correct": 4,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      },
+      "fire_rating_raw": {
+        "precision": null,
+        "recall": null,
+        "absent_accuracy": 1.0,
+        "escape_rate": 0.0,
+        "counts": {
+          "correct": 0,
+          "wrong": 0,
+          "missed": 0,
+          "absent_correct": 4,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      },
+      "fire_rating_minutes": {
+        "precision": null,
+        "recall": null,
+        "absent_accuracy": 1.0,
+        "escape_rate": 0.0,
+        "counts": {
+          "correct": 0,
+          "wrong": 0,
+          "missed": 0,
+          "absent_correct": 4,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      },
+      "finish_raw": {
+        "precision": null,
+        "recall": null,
+        "absent_accuracy": 1.0,
+        "escape_rate": 0.0,
+        "counts": {
+          "correct": 0,
+          "wrong": 0,
+          "missed": 0,
+          "absent_correct": 4,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      },
+      "hardware_group": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "absent_accuracy": null,
+        "escape_rate": null,
+        "counts": {
+          "correct": 4,
+          "wrong": 0,
+          "missed": 0,
+          "absent_correct": 0,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      },
+      "wall_type": {
+        "precision": null,
+        "recall": null,
+        "absent_accuracy": 1.0,
+        "escape_rate": 0.0,
+        "counts": {
+          "correct": 0,
+          "wrong": 0,
+          "missed": 0,
+          "absent_correct": 4,
+          "hallucinated": 0,
+          "escaped": 0
+        }
+      }
+    },
+    "extraction_summary": {
+      "extraction_run_id": "8b10a2b9-b7d6-495d-a36b-185536a75e06",
+      "prompt_version": "v1",
+      "model_id": "us.anthropic.claude-sonnet-4-6",
+      "openings_expected": 4,
+      "openings_found": 4,
+      "openings_spurious": [],
+      "openings_absent": [],
+      "citation_validity": 1.0,
+      "citation_rejection_rate": 0.0,
+      "input_tokens": 43354,
+      "output_tokens": 1791,
+      "cached_input_tokens": 0,
+      "cost_usd": null,
+      "latency_seconds": 108.396835
+    }
   }
 }

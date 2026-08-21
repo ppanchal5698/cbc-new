@@ -69,7 +69,12 @@ def document_costs(document: Document) -> dict:
         (Decimal(j.cost_actual if j.cost_actual is not None else (j.cost_estimate or 0)) for j in jobs),
         ZERO,
     )
-    llm_cost = sum((Decimal(r.cost_usd or 0) for r in runs), ZERO)
+    # None is not zero. An extraction run that recorded tokens but no cost has not
+    # been priced — Bedrock does not return a price and there is no rate table yet
+    # — and printing $0.00 for it would understate a real bill.
+    priced = [r for r in runs if r.cost_usd is not None]
+    unpriced = [r for r in runs if r.cost_usd is None]
+    llm_cost = sum((Decimal(r.cost_usd) for r in priced), ZERO)
 
     return {
         "document": document,
@@ -78,6 +83,7 @@ def document_costs(document: Document) -> dict:
         "ocr_cost": ocr_cost,
         "job_cost": job_cost,
         "llm_cost": llm_cost,
+        "llm_unpriced_runs": len(unpriced),
         "total": ocr_cost + llm_cost,
         "retried_jobs": [j for j in jobs if j.attempt > 1],
         "failed_jobs": [
@@ -139,8 +145,13 @@ def main(argv: list[str] | None = None) -> int:
             share = row["pages"] / report["page_count"] if report["page_count"] else 0
             print(f"      {route:<16} {row['pages']:4d} pages ({share:5.1%})  {money(row['cost'])}")
 
+        unpriced_note = (
+            f"  (+{report['llm_unpriced_runs']} run(s) UNPRICED)"
+            if report["llm_unpriced_runs"]
+            else ""
+        )
         print(f"    OCR {money(report['ocr_cost'])}   "
-              f"Bedrock {money(report['llm_cost'])}   "
+              f"Bedrock {money(report['llm_cost'])}{unpriced_note}   "
               f"total {money(report['total'])}")
 
         if report["input_tokens"]:

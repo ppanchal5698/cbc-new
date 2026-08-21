@@ -193,8 +193,21 @@ def invoke_tool(
     Call Bedrock Converse and require a tool call back.
 
     Inference parameters are fixed, not tuned per call: ``temperature=0`` with a
-    fixed ``top_p`` and ``max_tokens`` is what makes an extraction reproducible,
-    and an extraction that cannot be reproduced cannot be audited (§5.4).
+    fixed ``max_tokens`` is what makes an extraction reproducible, and an
+    extraction that cannot be reproduced cannot be audited (§5.4).
+
+    **``topP`` is deliberately not sent.** Current Claude models reject a request
+    carrying both, with *"`temperature` and `top_p` cannot both be specified for
+    this model"* — and because the locate pass degrades rather than fails, that
+    rejection surfaced not as an error but as every table in the document coming
+    back classified identically and the pipeline falling through to its
+    extract-everything fallback.
+
+    Temperature is the one to keep: §5.4 mandates ``temperature=0``, and
+    ``top_p=1.0`` means "no nucleus truncation", so dropping it removes nothing.
+    ``BEDROCK_TOP_P`` stays in configuration for models that want it instead of a
+    temperature, and ``inference_params`` records only what was actually sent —
+    logging a parameter the request never carried would make the audit trail lie.
     """
     settings_obj = get_settings()
     client = _client()
@@ -206,7 +219,6 @@ def invoke_tool(
         "inferenceConfig": {
             "maxTokens": max_tokens or settings_obj.bedrock_max_tokens,
             "temperature": settings_obj.bedrock_temperature,
-            "topP": settings_obj.bedrock_top_p,
         },
         "toolConfig": {
             "tools": [{"toolSpec": tool_spec}],

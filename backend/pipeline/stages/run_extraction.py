@@ -47,7 +47,9 @@ def run(document) -> dict:
         prompt_version=settings_obj.extraction_prompt_version,
         inference_params={
             "temperature": settings_obj.bedrock_temperature,
-            "top_p": settings_obj.bedrock_top_p,
+            # top_p is deliberately absent: bedrock.invoke does not send it, and
+            # recording a parameter the request never carried would make the
+            # audit trail claim something untrue about how a value was produced.
             "max_tokens": settings_obj.bedrock_max_tokens,
             # Fingerprints, so a silently edited prompt file is detectable after
             # the fact even though §8.2 forbids editing one in place.

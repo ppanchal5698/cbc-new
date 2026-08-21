@@ -65,6 +65,32 @@ EVALUATED_FIELDS = (
     "wall_type",
 )
 
+#: Opening column -> the ``field_name`` FieldProvenance records it under.
+#:
+#: They are not the same vocabulary and cannot be. Provenance names the thing the
+#: model was asked for (``size``); the Opening names what was stored after parsing
+#: (``size_raw``, plus the typed ``width_inches`` and ``height_inches`` derived
+#: from it). Several columns therefore share one provenance row.
+#:
+#: Getting this wrong is not cosmetic. A lookup that misses returns no confidence,
+#: which reads as "never flagged", which counts a correctly-flagged wrong value as
+#: an **escape** — the one metric that is supposed to mean "reached the customer".
+#: The first run of this harness reported 100% escape on size while every size was
+#: in fact flagged for review.
+PROVENANCE_FIELD = {
+    "size_raw": "size",
+    "width_inches": "size",
+    "height_inches": "size",
+    "handing": "handing",
+    "fire_rating_raw": "fire_rating",
+    "fire_rating_minutes": "fire_rating",
+    "finish_raw": "finish",
+    "hardware_group": "hardware_group",
+    # Never extracted as its own field today; it is read from the wall type
+    # legend, which §5.7 has not been asked to parse yet.
+    "wall_type": None,
+}
+
 #: Regression tolerance. Floating-point re-computation of the same measurement can
 #: land a hair off; a real regression is never this small.
 EPSILON = 1e-9
@@ -347,8 +373,7 @@ def evaluate_extraction(entry: dict, labels: dict) -> tuple[dict, dict] | None:
 
     settings = get_settings()
     thresholds = {
-        "fire_rating_raw": settings.confidence_threshold_fire_rating,
-        "fire_rating_minutes": settings.confidence_threshold_fire_rating,
+        "fire_rating": settings.confidence_threshold_fire_rating,
         "handing": settings.confidence_threshold_handing,
     }
 
@@ -387,9 +412,10 @@ def evaluate_extraction(entry: dict, labels: dict) -> tuple[dict, dict] | None:
             # Escape rate: a wrong or invented value that nobody was asked to look
             # at. A wrong value the system flagged is the system working.
             is_error = (want is not None and got != want) or (want is None and got is not None)
-            prov = provenance.get((door, name))
+            prov_field = PROVENANCE_FIELD.get(name, name)
+            prov = provenance.get((door, prov_field)) if prov_field else None
             confidence = prov.final_confidence if prov else None
-            threshold = thresholds.get(name, settings.confidence_threshold_default)
+            threshold = thresholds.get(prov_field, settings.confidence_threshold_default)
             flagged = confidence is not None and float(confidence) < threshold
             if not flagged:
                 score.unflagged += 1
