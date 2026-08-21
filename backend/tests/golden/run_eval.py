@@ -233,7 +233,7 @@ def resolve_pdf(entry: dict) -> Path | None:
     if target.exists():
         return target
     try:
-        boto3.client("s3", **settings.boto_kwargs()).download_file(
+        boto3.client("s3", **settings.boto_kwargs_for("s3")).download_file(
             settings.s3_derived_bucket, key, str(target)
         )
     except Exception as exc:  # noqa: BLE001 - absence is a reportable state, not a crash

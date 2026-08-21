@@ -49,7 +49,7 @@ class OCRSubmission:
 
 
 def _client():
-    return boto3.client("textract", **get_settings().boto_kwargs)
+    return boto3.client("textract", **get_settings().boto_kwargs_for("textract"))
 
 
 def feature_types_for(route: OCRRoute) -> tuple[str, ...]:

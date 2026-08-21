@@ -92,7 +92,10 @@ def _client():
             read_timeout=300,
             connect_timeout=10,
         ),
-        **settings_obj.boto_kwargs,
+        # Never the MiniStack endpoint: Bedrock is not emulated, and pointing
+        # a runtime call at an emulator that has never implemented it fails in
+        # a way that reads as a Bedrock outage rather than a config mistake.
+        **settings_obj.boto_kwargs_for("bedrock-runtime"),
     )
 
 

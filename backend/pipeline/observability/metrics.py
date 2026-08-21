@@ -178,16 +178,32 @@ def record_document_complete(*, latency_ms: int, total_cost: Decimal) -> None:
 # X-Ray
 # ---------------------------------------------------------------------------
 
+#: Set by ``configure_xray`` when tracing is actually available. Until then
+#: ``trace_segment`` must not touch the SDK at all.
+#:
+#: Guarding on a flag rather than on catching exceptions is not defensive
+#: duplication. With no active segment the recorder does not raise — its default
+#: ``context_missing`` behaviour is to *log an error* and return None. So a
+#: try/except around it silences nothing, and every stage of every local run
+#: emits an ERROR line about a missing segment. Error-level noise that is known
+#: to be meaningless is worse than no telemetry: it trains everyone reading the
+#: logs to skim past the level that matters.
+_tracing_enabled = False
+
+
 @contextmanager
 def trace_segment(name: str):
     """
     Open an X-Ray subsegment, or do nothing.
 
-    "Do nothing" is the normal case locally and in tests: with no daemon running,
-    the SDK raises on every context operation, and tracing must never be able to
-    fail a pipeline stage. Observability that can take down the thing it observes
-    is a liability.
+    "Do nothing" is the normal case locally and in tests, where there is no daemon
+    and ``configure_xray`` deliberately does not enable tracing. Observability
+    that can take down — or shout over — the thing it observes is a liability.
     """
+    if not _tracing_enabled:
+        yield None
+        return
+
     try:
         from aws_xray_sdk.core import xray_recorder
     except ImportError:
@@ -230,6 +246,8 @@ def configure_xray(service: str = "cbc-pipeline") -> None:
     Called once at worker start-up. Failure here is logged and swallowed for the
     same reason as above.
     """
+    global _tracing_enabled
+
     from shared.config import get_settings
 
     settings = get_settings()
@@ -240,10 +258,14 @@ def configure_xray(service: str = "cbc-pipeline") -> None:
     try:
         from aws_xray_sdk.core import patch_all, xray_recorder
 
-        xray_recorder.configure(service=service, context_missing="LOG_ERROR")
+        # IGNORE_ERROR, not LOG_ERROR: a subsegment opened outside any segment is
+        # an ordinary condition for a queue worker between messages, and logging
+        # it at ERROR would bury the failures that matter.
+        xray_recorder.configure(service=service, context_missing="IGNORE_ERROR")
         # boto3 and requests, so a slow Textract or Bedrock call shows up as its
         # own span rather than as unexplained time inside a stage.
         patch_all()
+        _tracing_enabled = True
         log.info("X-Ray tracing enabled", extra={"service": service})
     except Exception as exc:  # noqa: BLE001
         log.warning("X-Ray unavailable, continuing without tracing: %s", exc)

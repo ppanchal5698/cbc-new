@@ -92,7 +92,7 @@ def enqueue_document_ready(document, *, route_config_version: str = "v1") -> str
         "RouteConfigVersion": route_config_version,
     }
 
-    client = boto3.client("sqs", **settings_obj.boto_kwargs)
+    client = boto3.client("sqs", **settings_obj.boto_kwargs_for("sqs"))
     response = client.send_message(
         QueueUrl=_queue_url(client, settings_obj.document_ready_queue),
         MessageBody=json.dumps(body),

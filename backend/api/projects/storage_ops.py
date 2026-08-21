@@ -76,7 +76,7 @@ def _sha256_b64(data: bytes) -> str:
 
 
 def get_client():
-    return boto3.client("s3", **get_settings().boto_kwargs)
+    return boto3.client("s3", **get_settings().boto_kwargs_for("s3"))
 
 
 def put_source_document(key: str, data: bytes, *, content_type: str = "application/pdf") -> dict:

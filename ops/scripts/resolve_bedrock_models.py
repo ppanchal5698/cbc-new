@@ -38,10 +38,23 @@ import boto3
 from botocore.exceptions import ClientError
 
 #: Preference order for the extraction model, strongest first. Matched as a
-#: substring against inference-profile ids, so a version bump is picked up without
-#: editing this list.
+#: substring against inference-profile ids.
+#:
+#: This list is a generation ladder and it goes stale — that is inherent, not a
+#: flaw to engineer away. What matters is that it stays ordered newest-first:
+#: an entry like "claude-opus-4" also matches "claude-opus-4-8", so a stale list
+#: silently pins an older model while a newer one sits enabled in the account,
+#: and nothing fails. Add new families at the top when they appear.
 PREMIUM_PREFERENCE = (
+    "anthropic.claude-opus-5",
+    "anthropic.claude-sonnet-5",
+    "anthropic.claude-opus-4-8",
+    "anthropic.claude-opus-4-7",
+    "anthropic.claude-opus-4-6",
+    "anthropic.claude-opus-4-5",
     "anthropic.claude-opus-4",
+    "anthropic.claude-sonnet-4-6",
+    "anthropic.claude-sonnet-4-5",
     "anthropic.claude-sonnet-4",
     "anthropic.claude-3-7-sonnet",
     "anthropic.claude-3-5-sonnet",
@@ -49,10 +62,21 @@ PREMIUM_PREFERENCE = (
 
 #: Preference order for the cheap locate pass.
 CHEAP_PREFERENCE = (
+    "anthropic.claude-haiku-4-5",
     "anthropic.claude-haiku-4",
     "anthropic.claude-3-5-haiku",
     "anthropic.claude-3-haiku",
 )
+
+#: Inference-profile prefixes, most-preferred first.
+#:
+#: NFR-4 is the reason this exists. A ``global.`` profile routes the request to
+#: whichever region has capacity, anywhere in the world; a ``us.`` profile keeps
+#: it inside the United States. Bid documents are client drawings, and "the model
+#: ran somewhere in Europe that day" is not an answer anyone wants to give about
+#: them. Both profiles serve the identical model, so preferring ``us.`` costs
+#: nothing and settles the question.
+REGION_SCOPE_PREFERENCE = ("us.", "apac.", "eu.", "global.")
 
 
 def list_invocable(region: str) -> list[dict]:
@@ -108,11 +132,102 @@ def list_invocable(region: str) -> list[dict]:
     return candidates
 
 
-def choose(candidates: list[dict], preference: tuple[str, ...]) -> dict | None:
-    """First candidate matching the highest-ranked preference."""
+#: Errors meaning "this account cannot use this model". Everything else —
+#: throttling above all — means "ask again", and conflating the two reports a
+#: perfectly good model as unavailable, non-deterministically.
+DISQUALIFYING = {
+    "AccessDeniedException",
+    "ResourceNotFoundException",
+    "ValidationException",
+}
+
+
+def is_invocable(model_id: str, region: str, *, attempts: int = 4) -> bool:
+    """
+    Can this account actually **call** this model?
+
+    ``ListInferenceProfiles`` returns every profile that exists in the region, not
+    the ones you have been granted. Those are different sets, and the difference
+    stays invisible until the first real extraction call fails — precisely the
+    failure C5 exists to prevent, since a pinned-but-uninvocable model ID is a
+    deploy that looks configured and is not.
+
+    The check is a one-token ``converse``. A denied call bills nothing and a
+    successful one costs a fraction of a cent, so proving the grant is far cheaper
+    than discovering its absence part-way through a 200-page bid set.
+
+    Throttling is retried rather than counted as a refusal. Bedrock throttles a
+    burst of these readily, and an unretried throttle marks a granted model
+    unavailable — differently on each run, which is the worst way to be wrong.
+    """
+    import time
+
+    from botocore.config import Config
+
+    runtime = boto3.client(
+        "bedrock-runtime",
+        region_name=region,
+        config=Config(retries={"max_attempts": 1}, read_timeout=30),
+    )
+
+    for attempt in range(attempts):
+        try:
+            runtime.converse(
+                modelId=model_id,
+                messages=[{"role": "user", "content": [{"text": "hi"}]}],
+                inferenceConfig={"maxTokens": 1, "temperature": 0},
+            )
+            return True
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code in DISQUALIFYING:
+                return False
+            if attempt == attempts - 1:
+                print(f"    ! {model_id}: {code} after {attempts} attempts", file=sys.stderr)
+                return False
+            time.sleep(2**attempt)
+        except Exception as exc:  # noqa: BLE001
+            print(f"    ! {model_id}: {type(exc).__name__}", file=sys.stderr)
+            return False
+    return False
+
+
+def _scope_rank(candidate: dict) -> int:
+    """Lower is better. Unprefixed foundation models sort after every profile."""
+    for rank, prefix in enumerate(REGION_SCOPE_PREFERENCE):
+        if candidate["id"].startswith(prefix):
+            return rank
+    return len(REGION_SCOPE_PREFERENCE)
+
+
+def choose(
+    candidates: list[dict],
+    preference: tuple[str, ...],
+    *,
+    region: str | None = None,
+    verify: bool = True,
+) -> dict | None:
+    """
+    Best candidate: highest-ranked model family, then most-preferred region scope,
+    then — unless disabled — the first one this account can actually invoke.
+
+    All three orderings matter. The family decides capability; the region scope
+    decides where client drawings are processed (NFR-4); invocability decides
+    whether the pinned ID works at all.
+
+    Verification walks down the preference order lazily, so a typical resolve costs
+    one or two calls rather than probing the whole catalogue. That is not only
+    faster: bulk-probing every model in a region reliably trips Bedrock's throttle,
+    and a throttled probe is indistinguishable from a missing grant.
+    """
     for wanted in preference:
-        for candidate in candidates:
-            if wanted in candidate["id"]:
+        for candidate in sorted(
+            (c for c in candidates if wanted in c["id"]), key=_scope_rank
+        ):
+            if not verify or region is None:
+                return candidate
+            print(f"    trying {candidate['id']}")
+            if is_invocable(candidate["id"], region):
                 return candidate
     return None
 
@@ -133,6 +248,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--region", default="us-east-1")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list", action="store_true", help="show every candidate and exit")
+    parser.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="skip the invocability check (faster, but can pin an ungranted model)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -162,8 +282,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {candidate['kind']:<20} {candidate['id']}")
         return 0
 
-    premium = choose(candidates, PREMIUM_PREFERENCE)
-    cheap = choose(candidates, CHEAP_PREFERENCE)
+    verify = not args.no_verify
+    if verify:
+        print("Resolving against models this account can actually invoke:")
+    premium = choose(candidates, PREMIUM_PREFERENCE, region=args.region, verify=verify)
+    cheap = choose(candidates, CHEAP_PREFERENCE, region=args.region, verify=verify)
 
     if premium is None or cheap is None:
         print("Could not resolve both models.", file=sys.stderr)

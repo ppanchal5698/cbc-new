@@ -75,14 +75,14 @@ def bootstrap() -> dict:
 
     if not settings.aws_endpoint_url:
         raise ConfigError(
-            "bootstrap_local requires AWS_ENDPOINT_URL (a MiniStack emulator). In dev, "
+            "bootstrap_local requires LOCAL_AWS_ENDPOINT_URL (a MiniStack emulator). In dev, "
             "staging, and prod these resources are created by Terraform — see "
             "infra/modules/{storage,queue}."
         )
 
-    s3 = boto3.client("s3", **settings.boto_kwargs)
-    sqs = boto3.client("sqs", **settings.boto_kwargs)
-    sns = boto3.client("sns", **settings.boto_kwargs)
+    s3 = boto3.client("s3", **settings.boto_kwargs_for("s3"))
+    sqs = boto3.client("sqs", **settings.boto_kwargs_for("sqs"))
+    sns = boto3.client("sns", **settings.boto_kwargs_for("sns"))
 
     _ensure_bucket(s3, settings.s3_source_bucket)
     _ensure_bucket(s3, settings.s3_derived_bucket)

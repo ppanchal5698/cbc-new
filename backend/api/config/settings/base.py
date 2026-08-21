@@ -61,6 +61,10 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "corsheaders",
     "rest_framework",
+    # Provides the Token model that REST_FRAMEWORK's TokenAuthentication needs.
+    # Listing that auth class without this app means the class is configured and
+    # can never authenticate anyone, because the table it reads does not exist.
+    "rest_framework.authtoken",
     "drf_spectacular",
     "django_filters",
     # Django owns every migration in this project (§3.2 rule 1, ADR-0001).

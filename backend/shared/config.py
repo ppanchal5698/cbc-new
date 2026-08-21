@@ -35,6 +35,16 @@ ENVIRONMENTS = (LOCAL, DEV, STAGING, PROD)
 #: Environments whose secrets come from SSM rather than a .env file.
 SSM_ENVIRONMENTS = (STAGING, PROD)
 
+#: Services MiniStack emulates locally, and therefore the only ones
+#: ``AWS_ENDPOINT_URL`` may be applied to. Must match ``MINISTACK_SERVICES`` in
+#: docker-compose.yml — a service listed here but not there resolves to an
+#: endpoint that refuses the request; a service there but not here quietly talks
+#: to real AWS from a developer machine.
+#:
+#: Bedrock and Textract are deliberately absent: neither is emulated, and both
+#: have their own offline story (§11.1's NIM hatch, and ``FAKE_OCR=1``).
+EMULATED_SERVICES = frozenset({"s3", "sqs", "sns", "ssm"})
+
 
 class ConfigError(RuntimeError):
     """A required variable is missing, unparseable, or forbidden in this environment."""
@@ -271,17 +281,29 @@ class Settings:
     def is_production(self) -> bool:
         return self.environment == PROD
 
-    @property
-    def boto_kwargs(self) -> dict[str, Any]:
+    def boto_kwargs_for(self, service: str) -> dict[str, Any]:
         """
-        Shared boto3 client kwargs.
+        boto3 client kwargs for one service.
 
-        ``endpoint_url`` is only ever populated for local MiniStack. In AWS the
-        default resolver is used, which is what lets the free S3 gateway endpoint
+        ``endpoint_url`` is only ever populated for local MiniStack, and **only
+        for the services MiniStack actually emulates**. In AWS the default
+        resolver is used, which is what lets the free S3 gateway endpoint
         (§10.3 item 4) take effect without any client-side configuration.
+
+        The per-service scoping is load-bearing. Applying the override to every
+        client sends Bedrock to an emulator that has never implemented it, so a
+        local extraction call fails at an endpoint that cannot answer — with an
+        error that looks like a Bedrock problem rather than a configuration one.
+        Bedrock has no local substitute at all; §11.1's NIM hatch is the
+        alternative, and it is reached through a different code path entirely.
+
+        Textract likewise is not emulated, so it resolves to real AWS. That is
+        correct and deliberate: the offline substitute is ``FAKE_OCR=1``, and the
+        spend control is ``MAX_OCR_COST_PER_DOCUMENT_USD``, which is checked
+        before any OCR call rather than by making the client unusable.
         """
         kwargs: dict[str, Any] = {"region_name": self.aws_region}
-        if self.aws_endpoint_url:
+        if self.aws_endpoint_url and service in EMULATED_SERVICES:
             kwargs["endpoint_url"] = self.aws_endpoint_url
         return kwargs
 
@@ -324,6 +346,43 @@ class Settings:
         return self.nim_base_url, self.nim_api_key, self.nim_chat_model
 
 
+def _reject_global_endpoint_override() -> None:
+    """
+    Refuse ``AWS_ENDPOINT_URL`` and its per-service siblings.
+
+    botocore reads these directly from the environment and applies them **beneath**
+    any ``endpoint_url`` we pass, and ``AWS_ENDPOINT_URL`` applies to *every*
+    service. So setting it does not merely configure S3 and SQS — it silently
+    redirects Bedrock and Textract too.
+
+    That failure is close to undetectable. MiniStack answers a Bedrock call with a
+    mock completion rather than an error, so extraction "succeeds", every table
+    comes back classified the same way, and the pipeline degrades to its
+    extract-everything fallback. The bill and the eval numbers both look like a
+    model problem.
+
+    The local emulator endpoint therefore travels under a name botocore does not
+    recognise, and this guard exists so that anyone setting the standard variable
+    out of habit is told exactly why it is wrong instead of discovering it in a
+    quality report.
+    """
+    offenders = sorted(
+        name
+        for name in os.environ
+        if name == "AWS_ENDPOINT_URL" or name.startswith("AWS_ENDPOINT_URL_")
+        if os.environ[name].strip()
+    )
+    if not offenders:
+        return
+    raise ConfigError(
+        f"{', '.join(offenders)} is set. botocore applies these to every service, "
+        "including Bedrock and Textract, which have no local emulator — MiniStack "
+        "answers a redirected Bedrock call with a mock instead of failing, so the "
+        "damage is silent. Use LOCAL_AWS_ENDPOINT_URL instead; shared/config.py "
+        "applies it only to the services in EMULATED_SERVICES."
+    )
+
+
 def _build() -> Settings:
     # Tier 3 of the precedence chain, before anything is read. Skipped entirely
     # once ENVIRONMENT names a deployed environment, so a stray .env on a server
@@ -357,7 +416,10 @@ def _build() -> Settings:
         # produced a database that passed tests and could never hold a bid set.
         database_url=env_str("DATABASE_URL"),
         aws_region=aws_region,
-        aws_endpoint_url=env_str("AWS_ENDPOINT_URL", None),
+        # LOCAL_AWS_ENDPOINT_URL, deliberately not AWS_ENDPOINT_URL. See
+        # _reject_global_endpoint_override below for why the standard name is
+        # unusable here.
+        aws_endpoint_url=env_str("LOCAL_AWS_ENDPOINT_URL", None),
         s3_source_bucket=env_str("S3_SOURCE_BUCKET"),
         s3_derived_bucket=env_str("S3_DERIVED_BUCKET"),
         cloudfront_domain=env_str("CLOUDFRONT_DOMAIN", None),
@@ -459,9 +521,11 @@ def _validate(s: Settings) -> None:
 
     if s.aws_endpoint_url and s.environment in (STAGING, PROD):
         raise ConfigError(
-            f"AWS_ENDPOINT_URL is set in ENVIRONMENT={s.environment}. That points the "
-            "SDK at a local emulator and would silently bypass every real AWS service."
+            f"LOCAL_AWS_ENDPOINT_URL is set in ENVIRONMENT={s.environment}. That points "
+            "the SDK at a local emulator and would silently bypass every real AWS service."
         )
+
+    _reject_global_endpoint_override()
 
     if s.fake_ocr and s.environment != LOCAL:
         raise ConfigError(

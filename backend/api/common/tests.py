@@ -44,6 +44,71 @@ class TestConfigurationContract:
             settings_obj.require_local_llm()
         assert "local-only" in str(exc.value)
 
+    def test_the_local_endpoint_override_reaches_only_emulated_services(self):
+        """
+        MiniStack emulates s3, sqs, sns and ssm. It has never implemented Bedrock
+        or Textract.
+
+        Applying the local endpoint to every client is not a cosmetic mistake:
+        it addresses the extraction call to an emulator that cannot answer it, and
+        the resulting failure reads as a Bedrock outage rather than as the
+        configuration error it is.
+        """
+        settings_obj = dataclasses.replace(
+            get_settings(), aws_endpoint_url="http://ministack:4566"
+        )
+
+        for service in ("s3", "sqs", "sns", "ssm"):
+            assert settings_obj.boto_kwargs_for(service)["endpoint_url"] == (
+                "http://ministack:4566"
+            ), f"{service} is emulated and must use the local endpoint"
+
+        for service in ("bedrock-runtime", "bedrock", "textract"):
+            assert "endpoint_url" not in settings_obj.boto_kwargs_for(service), (
+                f"{service} is not emulated; sending it to MiniStack makes a local "
+                "run fail at an endpoint that cannot serve it"
+            )
+
+    def test_no_endpoint_override_is_applied_in_aws(self):
+        """
+        Without a local endpoint every client uses the default resolver, which
+        is what lets the free S3 gateway endpoint take effect (§10.3 item 4).
+        """
+        settings_obj = dataclasses.replace(get_settings(), aws_endpoint_url=None)
+        for service in ("s3", "sqs", "bedrock-runtime", "textract"):
+            assert settings_obj.boto_kwargs_for(service) == {
+                "region_name": settings_obj.aws_region
+            }
+
+    def test_the_standard_endpoint_variable_is_refused(self, monkeypatch):
+        """
+        ``AWS_ENDPOINT_URL`` must never be set, because botocore reads it from the
+        environment and applies it to **every** service, underneath anything the
+        code passes.
+
+        This was not caught by scoping the endpoint in ``boto_kwargs_for``: that
+        fixed what we hand to boto3 and left what boto3 reads for itself untouched.
+        The observed failure was extraction "succeeding" against a MiniStack mock,
+        classifying all 86 tables identically, and falling through to the
+        extract-everything path — a silent quality and cost failure that looked
+        like a bad model.
+        """
+        from shared.config import _reject_global_endpoint_override
+
+        for name in ("AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_BEDROCK_RUNTIME"):
+            monkeypatch.setenv(name, "http://ministack:4566")
+            with pytest.raises(ConfigError) as exc:
+                _reject_global_endpoint_override()
+            assert "LOCAL_AWS_ENDPOINT_URL" in str(exc.value)
+            monkeypatch.delenv(name)
+
+    def test_the_local_endpoint_variable_is_accepted(self, monkeypatch):
+        """The renamed variable is invisible to botocore, so it is allowed."""
+        from shared.config import _reject_global_endpoint_override
+
+        monkeypatch.setenv("LOCAL_AWS_ENDPOINT_URL", "http://ministack:4566")
+        _reject_global_endpoint_override()
+
     def test_zero_tolerance_thresholds_are_stricter(self):
         """§5.8: the cost of error is categorically different."""
         settings_obj = get_settings()

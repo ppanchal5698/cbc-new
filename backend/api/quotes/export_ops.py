@@ -41,7 +41,7 @@ def enqueue_quote_export(quote, *, requested_by=None) -> str:
         "RecipientEmail": recipient,
         "RequestedBy": str(getattr(requested_by, "id", "")) or None,
     }
-    client = boto3.client("sqs", **settings_obj.boto_kwargs)
+    client = boto3.client("sqs", **settings_obj.boto_kwargs_for("sqs"))
     queue_url = client.get_queue_url(QueueName=settings_obj.document_ready_queue)["QueueUrl"]
     message_id = client.send_message(QueueUrl=queue_url, MessageBody=json.dumps(body))["MessageId"]
 

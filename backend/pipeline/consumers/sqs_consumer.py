@@ -61,7 +61,7 @@ async def consume_forever(queue_name: str, *, max_messages: int = 5) -> None:
     what lets §3.5 add worker instances when the backlog grows.
     """
     settings_obj = get_settings()
-    client = boto3.client("sqs", **settings_obj.boto_kwargs)
+    client = boto3.client("sqs", **settings_obj.boto_kwargs_for("sqs"))
     queue_url: str | None = None
 
     while True:
