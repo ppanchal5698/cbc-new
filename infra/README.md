@@ -21,7 +21,8 @@ envs/
 ```
 
 First-time account setup, including the manual Bedrock grant, is
-[`../docs/aws-setup.md`](../docs/aws-setup.md).
+[`../docs/aws-setup.md`](../docs/aws-setup.md). What each of these services
+actually does at runtime is [`../docs/architecture.md`](../docs/architecture.md).
 
 ## Environments
 

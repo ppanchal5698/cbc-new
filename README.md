@@ -12,6 +12,7 @@ Project docs live in this repository, not an external wiki.
 | | |
 |---|---|
 | [Consolidated Spec](docs/CBC_Copilot_Consolidated_Spec.md) | The binding specification. Section numbers throughout the code refer to it. |
+| [Architecture](docs/architecture.md) | Every AWS service the system uses, and the full journey of one bid set from upload to approved quote. |
 | [Architecture decisions](docs/adr/) | Why the schema has one owner, why citations are a join table, why triage runs before OCR, why Cognito is deferred. |
 | [AWS setup](docs/aws-setup.md) | Connecting an account, including the manual Bedrock model-access grant. |
 | [backend/](backend/README.md) | Service layout and what is non-obvious about it. |
