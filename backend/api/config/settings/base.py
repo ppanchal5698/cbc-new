@@ -21,7 +21,7 @@ REPO_BACKEND = BASE_DIR.parent                            # backend/
 if str(REPO_BACKEND) not in sys.path:
     sys.path.insert(0, str(REPO_BACKEND))
 
-from shared.config import PROD, STAGING, get_settings  # noqa: E402
+from shared.config import LOCAL, PROD, STAGING, get_settings  # noqa: E402
 
 settings_obj = get_settings()
 
@@ -268,6 +268,15 @@ SPECTACULAR_SETTINGS = {
     "COMPONENT_SPLIT_REQUEST": True,
     # The frontend generates its types from this schema (§8.2, fixes H2).
     "SCHEMA_PATH_PREFIX": "/api",
+    # The schema names every endpoint, field and enum in the system. That is a
+    # map worth having behind the same door as the data it describes once this is
+    # deployed — and worth leaving open on a laptop, where the convenience is
+    # real and there is nothing behind it to protect.
+    "SERVE_PERMISSIONS": (
+        ["rest_framework.permissions.AllowAny"]
+        if ENVIRONMENT == LOCAL
+        else ["rest_framework.permissions.IsAuthenticated"]
+    ),
     "ENUM_NAME_OVERRIDES": {
         "ReviewStateEnum": "shared.enums.ReviewState.choices",
         "CostSourceEnum": "shared.enums.CostSource.choices",

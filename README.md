@@ -37,6 +37,10 @@ no AWS calls and no spend.
 
 ## The gates
 
+Once it is up, the API is browsable and callable at **<http://localhost:8000/api/docs/>**
+(Scalar). To try an authenticated endpoint: `POST /api/auth/token/` with your email
+and password, then paste the key into the auth panel as `tokenAuth`.
+
 ```bash
 make test         # full suite, including ★ schema parity against real Postgres
 make eval         # golden-set quality: per-field precision, recall, absent-accuracy

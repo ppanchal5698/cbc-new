@@ -1,6 +1,9 @@
 """Operational endpoints (§11.5)."""
 
 from django.db import connection
+from django.http import HttpResponseForbidden
+from django.urls import reverse
+from django.views.generic import TemplateView
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -37,3 +40,43 @@ def health(request):
                "environment": settings_obj.environment}
     code = status.HTTP_200_OK if database_ok else status.HTTP_503_SERVICE_UNAVAILABLE
     return Response(payload, status=code)
+
+
+class ScalarDocsView(TemplateView):
+    """
+    Scalar over the live OpenAPI schema, for trying endpoints from a browser.
+
+    A second *reader* of the drf-spectacular document, never a second contract:
+    §8.2 keeps the schema generated from the code, and this page fetches the same
+    ``/api/schema/`` everything else does.
+
+    Protected exactly as the schema is — public in local development, signed-in
+    only once deployed. The schema names every endpoint, every field and every
+    enum in the system; publishing that anonymously would sit oddly beside an API
+    that will not confirm whether an email address has an account.
+    """
+
+    template_name = "scalar.html"
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs), "schema_url": reverse("schema")}
+
+    def dispatch(self, request, *args, **kwargs):
+        if not _docs_are_public() and not request.user.is_authenticated:
+            return HttpResponseForbidden(
+                "Sign in first — /admin/ for an admin session, or POST "
+                "/api/auth/token/ for a token."
+            )
+        return super().dispatch(request, *args, **kwargs)
+
+
+def _docs_are_public() -> bool:
+    """
+    True only in local development.
+
+    Kept as a function rather than a module constant so a test can monkeypatch the
+    environment without reimporting the module.
+    """
+    from shared.config import LOCAL, get_settings
+
+    return get_settings().environment == LOCAL

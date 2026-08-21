@@ -35,6 +35,26 @@ offline with no Textract and no spend. MiniStack covers S3, SQS, SNS, and SSM. B
 is the only service with no local substitute; extraction needs either real credentials
 or the `local-llm` extra.
 
+## Trying the API
+
+`/api/docs/` renders the live OpenAPI schema through Scalar and can call endpoints
+from the browser. `/api/schema/swagger-ui/` and `/api/schema/redoc/` read the same
+document — three readers, one generated contract (§8.2).
+
+Authenticate with a token rather than a session: DRF enforces CSRF on
+session-authenticated writes and Scalar does not send the header, so a POST would
+fail for a reason unrelated to the endpoint under test.
+
+```bash
+curl -s localhost:8000/api/auth/token/ -H 'Content-Type: application/json'   -d '{"email":"you@cbc.test","password":"..."}'
+```
+
+Paste the key into Scalar's auth panel as `tokenAuth`.
+
+**These pages are open locally and closed once deployed.** The schema names every
+endpoint, field and enum in the system; that is a map worth keeping behind the
+same door as the data it describes.
+
 ## Tests
 
 ```bash

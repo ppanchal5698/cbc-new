@@ -196,3 +196,62 @@ class TestOpenApiContract:
         paths = auth_client.get("/api/schema/").data["paths"]
         assert "/api/pipeline-jobs/" in paths
         assert "/api/documents/{id}/pipeline-jobs/" in paths
+
+
+class TestScalarDocs:
+    """
+    Scalar reads the same drf-spectacular document everything else does (§8.2).
+    It is a second reader, never a second contract — so what is worth asserting is
+    that it renders, and that it is not more open than the schema it displays.
+    """
+
+    @pytest.mark.django_db
+    def test_the_page_renders_locally(self, api_client):
+        response = api_client.get("/api/docs/")
+        assert response.status_code == status.HTTP_200_OK
+        body = response.content.decode()
+        assert "api-reference" in body
+        assert "/api/schema/" in body, "the page must point at the live schema"
+
+    @pytest.mark.django_db
+    def test_it_is_closed_to_anonymous_callers_once_deployed(self, api_client, monkeypatch):
+        """
+        The schema names every endpoint, field and enum in the system. Publishing
+        that anonymously would sit oddly beside an API that will not confirm
+        whether an email address has an account.
+        """
+        from common import views
+
+        monkeypatch.setattr(views, "_docs_are_public", lambda: False)
+        assert api_client.get("/api/docs/").status_code == status.HTTP_403_FORBIDDEN
+
+    @pytest.mark.django_db
+    def test_an_authenticated_caller_still_gets_it_when_deployed(
+        self, api_client, user, monkeypatch
+    ):
+        """
+        A real session, not ``force_authenticate``.
+
+        This is a plain Django view, so ``request.user`` comes from the session
+        middleware — DRF's force_authenticate only decorates the DRF request and
+        leaves this view seeing AnonymousUser. Using it here would have made the
+        test fail for a reason that has nothing to do with the gate.
+        """
+        from common import views
+
+        monkeypatch.setattr(views, "_docs_are_public", lambda: False)
+        api_client.force_login(user)
+        assert api_client.get("/api/docs/").status_code == status.HTTP_200_OK
+
+    def test_the_schema_advertises_token_auth(self):
+        """
+        Scalar's auth panel is driven by the schema's securitySchemes. Without
+        tokenAuth declared, "try it" cannot authenticate and the page is a
+        read-only brochure.
+        """
+        from drf_spectacular.generators import SchemaGenerator
+
+        schemes = SchemaGenerator().get_schema(request=None, public=True)["components"][
+            "securitySchemes"
+        ]
+        assert "tokenAuth" in schemes

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CBC Copilot API</title>
+    <style>
+      body { margin: 0; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Scalar renders the live OpenAPI schema and lets you call endpoints from the
+      browser (§8.2 keeps drf-spectacular as the source; this is a second reader
+      of the same document, never a hand-written second contract).
+
+      To call anything authenticated: POST /api/auth/token/ with your email and
+      password, then paste the key into Scalar's auth panel as tokenAuth. Token
+      rather than session because DRF enforces CSRF on session-authenticated
+      writes, and Scalar does not carry the CSRF header — a POST would fail for a
+      reason that has nothing to do with the endpoint under test.
+    -->
+    <script id="api-reference" data-url="{{ schema_url }}"></script>
+    <script>
+      var configuration = {
+        theme: "default",
+        hideDownloadButton: false,
+        authentication: { preferredSecurityScheme: "tokenAuth" },
+      };
+      document.getElementById("api-reference").dataset.configuration =
+        JSON.stringify(configuration);
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>
