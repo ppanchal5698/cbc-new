@@ -39,6 +39,7 @@ class UserFactory(factory.django.DjangoModelFactory):
 
     email = factory.Sequence(lambda n: f"estimator{n}@cbc.test")
     full_name = factory.Sequence(lambda n: f"Estimator {n}")
+    role = "ESTIMATOR"
     is_active = True
     password = factory.PostGenerationMethodCall("set_password", "testpass123")
 

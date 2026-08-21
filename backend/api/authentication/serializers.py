@@ -44,9 +44,13 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id", "email", "full_name", "job_title", "phone",
-            "is_active", "is_staff", "date_joined", "last_login",
+            "role", "is_active", "is_staff", "date_joined", "last_login",
         )
-        read_only_fields = ("id", "email", "is_active", "is_staff", "date_joined", "last_login")
+        # role is readable so a client can render the right screens, and read-only
+        # for the same reason is_staff is: a PATCH must never be a promotion.
+        read_only_fields = (
+            "id", "email", "role", "is_active", "is_staff", "date_joined", "last_login",
+        )
 
     def update(self, instance, validated_data):
         # Belt and braces with read_only_fields above. A serializer field list is

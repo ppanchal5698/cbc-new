@@ -95,9 +95,23 @@ class TestCatalogApi:
         CatalogItemFactory(sku="X-1", part_number="ND53PD")
         assert auth_client.get("/api/catalog-items/?search=ND53PD").data["count"] == 1
 
-    def test_library_is_writable_by_an_estimator(self, auth_client):
-        """FR-3 requires maintaining the library, not just reading it."""
+    def test_an_estimator_cannot_write_to_the_library(self, auth_client):
+        """
+        The catalog is CBC's commercial data. Reads stay open to everyone; writes
+        are the steward's, and the role is the mechanism (NFR-10, Risk R5).
+        """
         response = auth_client.post(
+            "/api/catalog-items/",
+            {"vendor": "Bobrick", "sku": "B-0000", "description": "x",
+             "list_price": "1.00", "product_type_band": "RESTROOM_PARTITIONS",
+             "csi_division": "10", "is_stock": True},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_library_is_writable_by_an_admin(self, admin_client):
+        """FR-3 requires maintaining the library, not just reading it."""
+        response = admin_client.post(
             "/api/catalog-items/",
             {
                 "vendor": "Bobrick", "sku": "B-6806", "description": "Grab bar 36in",

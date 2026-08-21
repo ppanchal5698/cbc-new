@@ -21,6 +21,8 @@ exists only once someone with admin access says so.
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
+from shared.enums import Role
+
 
 class UserManager(BaseUserManager):
     """
@@ -50,28 +52,28 @@ class UserManager(BaseUserManager):
         ``is_active`` produces an account that cannot sign in, rather than one that
         silently can.
         """
-        extra.setdefault("is_staff", False)
+        extra.setdefault("role", Role.ESTIMATOR.value)
         extra.setdefault("is_superuser", False)
         extra.setdefault("is_active", False)
         return self._create(email, password, **extra)
 
     def create_superuser(self, email: str, password: str | None = None, **extra):
-        extra.setdefault("is_staff", True)
+        extra.setdefault("role", Role.ADMIN.value)
         extra.setdefault("is_superuser", True)
         extra.setdefault("is_active", True)
-        if not extra["is_staff"] or not extra["is_superuser"]:
-            raise ValueError("a superuser must have is_staff and is_superuser set")
+        if extra["role"] != Role.ADMIN.value or not extra["is_superuser"]:
+            raise ValueError("a superuser must hold the ADMIN role and is_superuser")
         return self._create(email, password, **extra)
 
 
 class User(AbstractUser):
     """
-    An estimator.
+    An estimator, or an admin who is also allowed to steward the reference data.
 
-    No role field. Every user today does the same job, and a role model invented
-    before a second role exists is an abstraction with one implementation — the
-    shape §8.2 warns against. When CBC needs an approver distinct from an
-    estimator, that is when the field earns its place.
+    Two roles, and no permission table behind them. Django's group and per-object
+    permission machinery is real and unused here on purpose: with two roles and one
+    axis of difference, a ``role`` column answers every question the codebase asks,
+    and ``user.is_admin`` reads at a glance where a permission lookup does not.
     """
 
     # AbstractUser's own fields, removed rather than left to rot beside their
@@ -92,6 +94,13 @@ class User(AbstractUser):
     job_title = models.CharField(max_length=100, blank=True)
     phone = models.CharField(max_length=40, blank=True)
 
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices(),
+        default=Role.ESTIMATOR.value,
+        help_text="ADMIN also stewards pricing and catalog data, and may open /admin/.",
+    )
+
     USERNAME_FIELD = "email"
     #: Everything else is optional. createsuperuser prompts for email and password.
     REQUIRED_FIELDS: list[str] = []
@@ -101,6 +110,24 @@ class User(AbstractUser):
     class Meta:
         db_table = "authentication_user"
         ordering = ["email"]
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == Role.ADMIN.value
+
+    def save(self, *args, **kwargs):
+        """
+        Keep ``is_staff`` derived from ``role``.
+
+        Django reads ``is_staff`` to decide who may open the admin site, and this
+        model has a second field describing the same thing. Two writable sources
+        for one fact drift — someone ticks the admin-site box without changing the
+        role, and a user has admin-site access while every API permission check
+        says estimator. Role is the source of truth; the admin form hides
+        ``is_staff`` for the same reason.
+        """
+        self.is_staff = self.is_admin
+        return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return self.full_name or self.email

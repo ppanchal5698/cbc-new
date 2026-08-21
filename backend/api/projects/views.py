@@ -9,6 +9,7 @@ contract and the database transaction around it.
 
 import logging
 
+from common.permissions import IsAdminForDestroy
 from django.db import transaction
 from django.db.models import Count
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -38,6 +39,8 @@ log = logging.getLogger("cbc.api.projects")
 
 class ProjectViewSet(viewsets.ModelViewSet):
     """Bids. A Project is the bid set; a Document is one PDF within it."""
+
+    permission_classes = [IsAdminForDestroy]
 
     queryset = Project.objects.all().order_by("-created_at")
     filterset_fields = ["source_channel", "brand", "architect", "general_contractor"]

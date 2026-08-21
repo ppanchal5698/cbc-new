@@ -5,6 +5,7 @@ Explicitly not per-project: this is the fix for the Excel-workbook-per-job statu
 quo, where hardware sets lived inside whichever job file last used them.
 """
 
+from common.permissions import IsAdminOrReadOnly
 from rest_framework import viewsets
 
 from .models import CatalogItem
@@ -12,6 +13,8 @@ from .serializers import CatalogItemSerializer
 
 
 class CatalogItemViewSet(viewsets.ModelViewSet):
+
+    permission_classes = [IsAdminOrReadOnly]
     queryset = CatalogItem.objects.select_related("finish_code").order_by("vendor", "sku")
     serializer_class = CatalogItemSerializer
     filterset_fields = [

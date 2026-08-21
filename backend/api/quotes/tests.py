@@ -410,9 +410,14 @@ class TestApprovalGate:
         )
         assert response.status_code == status.HTTP_409_CONFLICT
 
-    def test_an_approved_quote_cannot_be_deleted(self, auth_client):
+    def test_an_approved_quote_cannot_be_deleted(self, admin_client):
+        """
+        Deliberately an ADMIN. Deletion is admin-only now, so an estimator is
+        refused at the role check and never reaches the approval guard this test
+        exists to exercise — it would pass for entirely the wrong reason.
+        """
         quote = QuoteFactory(status="APPROVED")
-        assert auth_client.delete(f"/api/quotes/{quote.id}/").status_code == 400
+        assert admin_client.delete(f"/api/quotes/{quote.id}/").status_code == 400
 
 
 # ---------------------------------------------------------------------------

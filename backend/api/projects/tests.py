@@ -129,11 +129,18 @@ class TestProjectCrud:
         response = auth_client.get(f"/api/projects/{project.id}/")
         assert len(response.data["documents"]) == 2
 
-    def test_delete_cascades_to_documents(self, auth_client):
+    def test_delete_cascades_to_documents(self, admin_client):
+        """Deletion is admin-only, so the cascade is exercised as an admin."""
         project = ProjectFactory()
         DocumentFactory(project=project)
-        assert auth_client.delete(f"/api/projects/{project.id}/").status_code == 204
+        assert admin_client.delete(f"/api/projects/{project.id}/").status_code == 204
         assert Document.objects.count() == 0
+
+    def test_an_estimator_cannot_delete_a_project(self, auth_client):
+        project = ProjectFactory()
+        DocumentFactory(project=project)
+        assert auth_client.delete(f"/api/projects/{project.id}/").status_code == 403
+        assert Document.objects.count() == 1, "nothing was cascaded"
 
 
 # ---------------------------------------------------------------------------

@@ -113,7 +113,13 @@ class FieldProvenanceViewSet(viewsets.ReadOnlyModelViewSet):
     a row from the tuning dataset.
     """
 
-    queryset = FieldProvenance.objects.select_related("opening", "extraction_run").all()
+    # Ordered, because an unordered queryset behind a paginator is not merely
+    # untidy: Postgres is free to return rows in a different order per query, so
+    # page 2 can repeat a row from page 1 and omit another entirely.
+    queryset = (
+        FieldProvenance.objects.select_related("opening", "extraction_run")
+        .order_by("opening__door_number", "field_name")
+    )
     filterset_fields = ["extraction_run", "opening", "field_name", "review_state"]
 
     def get_serializer_class(self):

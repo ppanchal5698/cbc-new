@@ -8,6 +8,7 @@ March must reproduce identically in September (§6.2 step 5).
 
 from datetime import date
 
+from common.permissions import IsAdminOrReadOnly
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import viewsets
 
@@ -28,6 +29,8 @@ AS_OF = OpenApiParameter(
 class EffectiveDatedViewSet(viewsets.ModelViewSet):
     """Adds ``?as_of=YYYY-MM-DD`` to every effective-dated reference table."""
 
+    permission_classes = [IsAdminOrReadOnly]
+
     def get_queryset(self):
         qs = super().get_queryset()
         as_of = self.request.query_params.get("as_of")
@@ -46,6 +49,8 @@ class FinishCodeViewSet(viewsets.ModelViewSet):
     US19 and US26D are separate rows and must stay that way (§1.3).
     """
 
+    permission_classes = [IsAdminOrReadOnly]
+
     queryset = FinishCode.objects.order_by("us_code")
     serializer_class = FinishCodeSerializer
     filterset_fields = ["us_code", "bhma_code", "base_metal"]
@@ -53,6 +58,8 @@ class FinishCodeViewSet(viewsets.ModelViewSet):
 
 
 class ThroatDepthViewSet(viewsets.ModelViewSet):
+
+    permission_classes = [IsAdminOrReadOnly]
     queryset = ThroatDepth.objects.order_by("throat_depth_inches")
     serializer_class = ThroatDepthSerializer
     filterset_fields = ["is_custom"]

@@ -13,6 +13,7 @@ Concretely: :meth:`QuoteViewSet.approve` is the only path to ``APPROVED``, and
 
 import logging
 
+from common.permissions import IsAdminForDestroy
 from django.db import transaction
 from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -36,6 +37,8 @@ log = logging.getLogger("cbc.api.quotes")
 
 
 class QuoteViewSet(viewsets.ModelViewSet):
+
+    permission_classes = [IsAdminForDestroy]
     queryset = Quote.objects.select_related("project", "created_by").order_by("-created_at")
     filterset_fields = ["project", "status", "tax_jurisdiction"]
     ordering_fields = ["created_at", "grand_total"]

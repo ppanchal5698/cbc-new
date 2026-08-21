@@ -222,6 +222,40 @@ class ElementType(StrEnum):
     SELECTION_MARK = "selection_mark"
 
 
+class Role(StrEnum):
+    """
+    Who a user is (C3 / ADR-0004, §11.2).
+
+    Two roles, because there are two jobs. ADMIN is a strict superset: it does
+    everything an estimator does, plus stewardship of the reference data.
+
+    **ADMIN is not the same word as Django's ``is_staff``, and the model keeps
+    them in sync rather than letting them drift.** ``is_staff`` means exactly one
+    thing to Django — "may open /admin/" — so it is derived from this field and
+    never set by hand. The non-admin role is ESTIMATOR and not "STAFF" for the
+    same reason: a value named STAFF that implied ``is_staff=False`` would invert
+    a Django term inside the codebase that uses it.
+
+    What ADMIN holds exclusively:
+
+    * **Writes to pricing and catalog.** Margin bands, vendor multipliers, tax
+      rates, finish codes, throat depths, catalog items. Reads stay open — an
+      estimator cannot work without them. This is the stewardship owner NFR-10 and
+      Risk R5 flag as unnamed; the role is the mechanism, CBC still names the
+      person.
+    * **User activation.** Approving a signup grants access to client drawings.
+    * **Destroying projects and quotes.** Estimators create, edit and approve;
+      removing the record is a different kind of act.
+
+    Quote approval is deliberately NOT admin-only: NFR-1 says "no quote sent
+    without explicit **estimator** approval", and NFR-9 — approval authority and
+    dollar thresholds — is out of scope.
+    """
+
+    ADMIN = "ADMIN"
+    ESTIMATOR = "ESTIMATOR"
+
+
 class ReviewState(StrEnum):
     """
     Drives FR-8 flagging and FR-9 approval.
