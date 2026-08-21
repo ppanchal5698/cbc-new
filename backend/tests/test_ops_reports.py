@@ -119,7 +119,7 @@ def test_gather_samples_treats_an_estimator_correction_as_ground_truth(django_us
         field_provenance=wrong,
     )
 
-    samples = gather_samples()["handing"]
+    samples = gather_samples("v1")["handing"]
     assert sorted(samples) == [(0.91, True), (0.93, False)]
     assert right.id  # the uncorrected one is present and marked correct
 
@@ -139,7 +139,54 @@ def test_gather_samples_counts_a_rejected_citation_as_wrong():
         final_confidence=0.88,
         review_state=ReviewState.REJECTED.value,
     )
-    assert gather_samples()["fire_rating_raw"] == [(0.88, True)]
+    assert gather_samples("v1")["fire_rating_raw"] == [(0.88, True)]
+
+
+def test_samples_never_cross_prompt_versions():
+    """
+    A threshold belongs to the prompt that produced the confidences.
+
+    Extraction v1 returned door sizes as the width alone and scored them at 0.39.
+    Pooling those rows into a v2 calculation would drag the size threshold down to
+    accommodate a bug that no longer exists — and the resulting number would carry
+    all the authority of a measurement.
+    """
+    from calibrate_threshold import gather_samples, pool_composition
+    from factories import ExtractionRunFactory, FieldProvenanceFactory
+
+    old = ExtractionRunFactory(prompt_version="v1")
+    new_run = ExtractionRunFactory(prompt_version="v2")
+    FieldProvenanceFactory(extraction_run=old, field_name="size", final_confidence=0.39)
+    FieldProvenanceFactory(extraction_run=new_run, field_name="size", final_confidence=0.93)
+
+    assert gather_samples("v2")["size"] == [(0.93, False)]
+    assert gather_samples("v1")["size"] == [(0.39, False)]
+    assert gather_samples("v3") == {}, "an unknown version yields nothing, not everything"
+
+    assert pool_composition() == {"v1": 1, "v2": 1}
+
+
+def test_the_stricter_thresholds_cover_exactly_the_zero_tolerance_fields():
+    """
+    §5.8 names two fields whose cost of error is categorically different, and the
+    extraction schema is the authority on what they are called. The calibration
+    table must agree with it — a key that drifts prints the 0.80 default beside a
+    field that is supposed to be held to 0.95.
+    """
+    from calibrate_threshold import current_thresholds
+
+    from pipeline.llm.schemas.extraction import ZERO_TOLERANCE_FIELDS
+    from shared.config import get_settings
+
+    settings = get_settings()
+    table = current_thresholds(settings)
+
+    assert set(table) == set(ZERO_TOLERANCE_FIELDS)
+    for field_name, threshold in table.items():
+        assert threshold >= settings.confidence_threshold_default, (
+            f"{field_name} is a zero-tolerance field and must not be held to a "
+            "looser threshold than everything else"
+        )
 
 
 # ---------------------------------------------------------------------------

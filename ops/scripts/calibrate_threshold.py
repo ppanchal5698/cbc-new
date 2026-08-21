@@ -51,13 +51,49 @@ THRESHOLDS = [round(0.50 + 0.01 * i, 2) for i in range(50)]
 DEFAULT_MIN_SAMPLES = 20
 
 
-def gather_samples() -> dict[str, list[tuple[float, bool]]]:
+def current_thresholds(settings) -> dict[str, float]:
     """
-    ``{field_name: [(confidence, was_wrong), ...]}`` from live review activity.
+    The operating point in force today, keyed by **provenance** field name.
+
+    Provenance records ``fire_rating``; the Opening column is ``fire_rating_raw``.
+    They are different vocabularies, and keying this table by the Opening name
+    silently prints the 0.80 default beside the two fields §5.8 holds to 0.95 —
+    which is the one place an operator would notice the stricter floor exists.
+    """
+    return {
+        "fire_rating": settings.confidence_threshold_fire_rating,
+        "handing": settings.confidence_threshold_handing,
+    }
+
+
+def pool_composition() -> dict[str, int]:
+    """``{prompt_version: usable sample count}`` across every run in the database."""
+    from django.db.models import Count
+
+    rows = (
+        FieldProvenance.objects.exclude(final_confidence__isnull=True)
+        .values("extraction_run__prompt_version")
+        .annotate(n=Count("id"))
+        .order_by("extraction_run__prompt_version")
+    )
+    return {r["extraction_run__prompt_version"]: r["n"] for r in rows}
+
+
+def gather_samples(prompt_version: str) -> dict[str, list[tuple[float, bool]]]:
+    """
+    ``{field_name: [(confidence, was_wrong), ...]}`` for ONE prompt version.
 
     "Wrong" means an estimator changed the value, or the §5.6 validation gate
     rejected it. Both are cases where the system produced something it should not
     have, which is exactly what a threshold is meant to catch.
+
+    **Scoped to a single prompt version, and that is not fussiness.** A threshold
+    is a property of the prompt and model that produced the confidences, not of
+    the field name. Pooling versions lets a superseded prompt set the operating
+    point for the one actually running: extraction v1 returned door sizes as the
+    width alone and scored them at 0.39, so mixing its rows into a v2 calculation
+    would drag the size threshold down to accommodate a bug that no longer exists,
+    and the resulting number would look measured.
     """
     corrected = set(
         Feedback.objects.filter(
@@ -66,8 +102,10 @@ def gather_samples() -> dict[str, list[tuple[float, bool]]]:
     )
 
     samples: dict[str, list[tuple[float, bool]]] = {}
-    provenances = FieldProvenance.objects.exclude(final_confidence__isnull=True).only(
-        "id", "field_name", "final_confidence", "review_state"
+    provenances = (
+        FieldProvenance.objects.exclude(final_confidence__isnull=True)
+        .filter(extraction_run__prompt_version=prompt_version)
+        .only("id", "field_name", "final_confidence", "review_state")
     )
 
     for prov in provenances.iterator():
@@ -159,16 +197,32 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Confidence calibration (§5.9)")
     parser.add_argument("--field", help="one field only")
     parser.add_argument("--min-samples", type=int, default=DEFAULT_MIN_SAMPLES)
+    parser.add_argument(
+        "--prompt-version",
+        help="calibrate this prompt version instead of the one currently configured",
+    )
     args = parser.parse_args(argv)
 
     settings = get_settings()
-    current = {
-        "fire_rating_raw": settings.confidence_threshold_fire_rating,
-        "fire_rating_minutes": settings.confidence_threshold_fire_rating,
-        "handing": settings.confidence_threshold_handing,
-    }
+    current = current_thresholds(settings)
 
-    samples = gather_samples()
+    version = args.prompt_version or settings.extraction_prompt_version
+    pool = pool_composition()
+
+    print()
+    print(f"Calibrating prompt version {version!r}.")
+    if pool:
+        print("Sample pool in this database, by prompt version:")
+        for found, count in sorted(pool.items()):
+            mark = "  <- calibrating" if found == version else "  (excluded)"
+            print(f"    {found or '(none)':<10} {count:5d} scored fields{mark}")
+        if len(pool) > 1:
+            print()
+            print("  Only the selected version is used. A threshold belongs to the prompt")
+            print("  that produced the confidences, so pooling versions would let a")
+            print("  superseded prompt set the operating point for the one in force.")
+
+    samples = gather_samples(version)
     if args.field:
         samples = {k: v for k, v in samples.items() if k == args.field}
 
