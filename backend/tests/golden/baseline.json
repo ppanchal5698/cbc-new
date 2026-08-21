@@ -21,13 +21,13 @@
     },
     "extraction": {
       "size_raw": {
-        "precision": 0.0,
-        "recall": 0.0,
+        "precision": 1.0,
+        "recall": 1.0,
         "absent_accuracy": null,
         "escape_rate": null,
         "counts": {
-          "correct": 0,
-          "wrong": 4,
+          "correct": 4,
+          "wrong": 0,
           "missed": 0,
           "absent_correct": 0,
           "hallucinated": 0,
@@ -35,28 +35,28 @@
         }
       },
       "width_inches": {
-        "precision": null,
-        "recall": 0.0,
+        "precision": 1.0,
+        "recall": 1.0,
         "absent_accuracy": null,
         "escape_rate": null,
         "counts": {
-          "correct": 0,
+          "correct": 4,
           "wrong": 0,
-          "missed": 4,
+          "missed": 0,
           "absent_correct": 0,
           "hallucinated": 0,
           "escaped": 0
         }
       },
       "height_inches": {
-        "precision": null,
-        "recall": 0.0,
+        "precision": 1.0,
+        "recall": 1.0,
         "absent_accuracy": null,
         "escape_rate": null,
         "counts": {
-          "correct": 0,
+          "correct": 4,
           "wrong": 0,
-          "missed": 4,
+          "missed": 0,
           "absent_correct": 0,
           "hallucinated": 0,
           "escaped": 0
@@ -148,8 +148,8 @@
       }
     },
     "extraction_summary": {
-      "extraction_run_id": "8b10a2b9-b7d6-495d-a36b-185536a75e06",
-      "prompt_version": "v1",
+      "extraction_run_id": "f4e03e4c-408a-4ffa-8dbb-08a6b2d2a159",
+      "prompt_version": "v2",
       "model_id": "us.anthropic.claude-sonnet-4-6",
       "openings_expected": 4,
       "openings_found": 4,
@@ -157,11 +157,11 @@
       "openings_absent": [],
       "citation_validity": 1.0,
       "citation_rejection_rate": 0.0,
-      "input_tokens": 43354,
-      "output_tokens": 1791,
+      "input_tokens": 40747,
+      "output_tokens": 1821,
       "cached_input_tokens": 0,
       "cost_usd": null,
-      "latency_seconds": 108.396835
+      "latency_seconds": 108.548665
     }
   }
 }

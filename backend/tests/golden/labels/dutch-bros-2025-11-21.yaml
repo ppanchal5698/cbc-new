@@ -48,13 +48,21 @@ schedule_pages: [15]
 #     inferable from the floor plan swing arcs by a human, which is exactly why
 #     the system must NOT infer it: a guessed hand orders a door that will not
 #     hang. Every row is `handing_absent: true`.
+#   * SIZE is TWO columns, W and H, not one cell. `size_raw` is therefore the two
+#     cell texts joined by a single space, exactly as extraction prompt v2 rule 3
+#     requires. It is deliberately NOT "W x H": grounding normalises punctuation
+#     away and compares against the concatenated cited cells, so the space-joined
+#     form scores 100 while an inserted "x" scores 76.9 against a floor of 90 and
+#     the field is rejected outright. These labels originally said "x" — that was
+#     an error about the contract, not about the document, and the typed
+#     width_inches/height_inches below are unchanged.
 #   * FINISH — no finish column. Note B says the door and frame are paint grade,
 #     painted PT-2, which is a painting instruction, not a hardware finish code.
 #     It must not be resolved against `finish_codes` (§5.7); `finish_raw` is null.
 
 openings:
   - door_number: "01"
-    size_raw: "3' - 6\" x 7' - 0\""
+    size_raw: "3' - 6\" 7' - 0\""
     width_inches: 42
     height_inches: 84
     door_type: "A"               # A - BACK DOOR
@@ -73,7 +81,7 @@ openings:
     wall_type: null
 
   - door_number: "02"
-    size_raw: "3' - 0\" x 7' - 0\""
+    size_raw: "3' - 0\" 7' - 0\""
     width_inches: 36
     height_inches: 84
     door_type: "B"               # B - RUNNER DOOR
@@ -92,7 +100,7 @@ openings:
     wall_type: null
 
   - door_number: "03"
-    size_raw: "3' - 0\" x 7' - 0\""
+    size_raw: "3' - 0\" 7' - 0\""
     width_inches: 36
     height_inches: 84
     door_type: "C"               # C - RESTROOM DOOR
@@ -114,7 +122,7 @@ openings:
 
   - door_number: "06"
     # A 3'-0" x 3'-0" opening: the walk-in cooler door, manufacturer-supplied.
-    size_raw: "3' - 0\" x 3' - 0\""
+    size_raw: "3' - 0\" 3' - 0\""
     width_inches: 36
     height_inches: 36
     door_type: "F"               # F - COOLER DOOR

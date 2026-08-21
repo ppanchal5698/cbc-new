@@ -26,9 +26,19 @@ FOUR_DIGIT = re.compile(r"^(\d)(\d)(\d)(\d)$")
 #: The explicit form, e.g. ``3'-0" x 7'-0"`` or ``3'0 X 7'0``. Supported because
 #: it is unambiguous and deterministic to read — this is parsing, not inference.
 #: Anything outside these two shapes is flagged rather than interpreted.
+#:
+#: The separator is optional. A schedule that splits SIZE across a ``W`` and an
+#: ``H`` column yields the two cells joined by a space and nothing else
+#: (extraction prompt v2 rule 3) — ``3' - 6" 7' - 0"``. The model must not insert
+#: an ``x`` there, because grounding normalises punctuation away and compares
+#: against the concatenated cited cells: the space-joined form scores 100, and an
+#: inserted ``x`` scores 76.9 against a floor of 90 and is rejected.
+#:
+#: Both feet-inch groups are still required, so a lone ``3' - 0"`` does not parse
+#: as a size — it is flagged, which is the correct answer for half a value.
 EXPLICIT = re.compile(
     r"""^(\d{1,2})\s*'\s*[-\s]?\s*(\d{1,2})?\s*"?      # 3'-0"  /  3' 0
-        \s*[xX×]\s*                               # x
+        \s*(?:[xX×]\s*)?                          # x, or nothing but whitespace
         (\d{1,2})\s*'\s*[-\s]?\s*(\d{1,2})?\s*"?$      # 7'-0"
     """,
     re.VERBOSE,
