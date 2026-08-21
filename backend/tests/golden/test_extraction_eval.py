@@ -133,6 +133,42 @@ def test_classifier_finds_every_schedule_page(results):
         pytest.skip("no golden PDF reachable; classification not measured")
 
 
+def test_zero_tolerance_flags_are_correct(results):
+    """
+    §5.8, asserted as an absolute floor rather than a trend line.
+
+    A null fire rating and a *confirmed-unrated* fire rating are different claims,
+    and only one of them is safe to act on. The per-field absent-accuracy above
+    cannot tell them apart — it only asks whether the value is null — so the flags
+    are checked directly here.
+
+    The failure this guards against is not hypothetical. These labels originally
+    asserted ``fire_rating_absent: true`` for a schedule that has no rating column
+    at all, which would have recorded "confirmed unrated" for four openings nobody
+    had confirmed anything about.
+    """
+    measured = False
+    for bid_set_id, result in results.items():
+        summary = result.get("extraction_summary")
+        if not summary or "zero_tolerance" not in summary:
+            continue
+        measured = True
+        for field_name, zt in summary["zero_tolerance"].items():
+            assert zt["absent_flag_mismatched"] == 0, (
+                f"{bid_set_id}: {field_name}_absent disagrees with the labels on "
+                f"{zt['absent_flag_mismatched']} opening(s). Turning silence into a "
+                "positive claim is the §5.8 failure."
+            )
+            assert zt["review_flag_wrong"] == 0, (
+                f"{bid_set_id}: {field_name} was not raised for review on "
+                f"{zt['review_flag_wrong']} opening(s). An unconfirmed rating nobody "
+                "is asked to look at is the same as no control at all."
+            )
+
+    if not measured:
+        pytest.skip("no extraction run in this database; see test_no_extraction_regression")
+
+
 def test_gate_refuses_to_pass_without_a_baseline():
     """
     The meta-test. B12 was a gate that could not fail; this asserts that the

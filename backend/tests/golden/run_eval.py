@@ -422,6 +422,56 @@ def evaluate_extraction(entry: dict, labels: dict) -> tuple[dict, dict] | None:
                 if is_error:
                     score.escaped += 1
 
+    # ── Zero tolerance (§5.8) ────────────────────────────────────────────────
+    #
+    # Absent-accuracy above only asks whether the VALUE is null. That is not the
+    # whole requirement, and on its own it scores a pass for two outcomes that
+    # mean opposite things:
+    #
+    #   absent=true   the schedule states the opening is unrated. A finding.
+    #   absent=false  nothing was extracted. Someone must still confirm it.
+    #
+    # Collapsing those turns silence into a code-compliance claim. So the flags
+    # are measured directly, and so is whether the field was actually raised for
+    # review — an unconfirmed rating that nobody is asked to look at is the
+    # failure §5.8 exists to prevent.
+    zero_tolerance = {}
+    for parsed_name, opening_field in (("fire_rating", "fire_rating"), ("handing", "handing")):
+        flag_field = f"{opening_field}_absent"
+        correct_flag = mismatched_flag = correctly_flagged = unflagged_unconfirmed = 0
+
+        for door, expected in expected_openings.items():
+            if flag_field not in expected:
+                continue
+            opening = actual_openings.get(door)
+            if opening is None:
+                continue
+
+            if bool(getattr(opening, flag_field)) == bool(expected[flag_field]):
+                correct_flag += 1
+            else:
+                mismatched_flag += 1
+
+            wants_flag = expected.get(f"{opening_field}_flagged")
+            if wants_flag is None:
+                continue
+            prov = provenance.get((door, parsed_name))
+            was_flagged = prov is not None and prov.review_state in (
+                ReviewState.FLAGGED.value,
+                ReviewState.REJECTED.value,
+            )
+            if was_flagged == bool(wants_flag):
+                correctly_flagged += 1
+            else:
+                unflagged_unconfirmed += 1
+
+        zero_tolerance[opening_field] = {
+            "absent_flag_correct": correct_flag,
+            "absent_flag_mismatched": mismatched_flag,
+            "review_flag_correct": correctly_flagged,
+            "review_flag_wrong": unflagged_unconfirmed,
+        }
+
     # Openings invented wholesale. Counted separately from field errors: a
     # fabricated door 04 is not a bad size value, it is a line item that will be
     # quoted, ordered, and delivered to a wall that has no opening in it.
@@ -442,6 +492,7 @@ def evaluate_extraction(entry: dict, labels: dict) -> tuple[dict, dict] | None:
         "model_id": run.model_id,
         "openings_expected": len(expected_openings),
         "openings_found": len(actual_openings),
+        "zero_tolerance": zero_tolerance,
         "openings_spurious": spurious,
         "openings_absent": absent_openings,
         "citation_validity": (
@@ -521,6 +572,17 @@ def print_report(results: dict) -> None:
             print(
                 f"    {name:<22} {_pct(score['precision'])} {_pct(score['recall'])} "
                 f"{_pct(score['absent_accuracy'])} {_pct(score['escape_rate'])}   {detail}"
+            )
+
+        print("\n    zero tolerance (§5.8) — the flag, not just the null")
+        for field_name, zt in summary["zero_tolerance"].items():
+            bad = zt["absent_flag_mismatched"] + zt["review_flag_wrong"]
+            mark = "  ✗" if bad else ""
+            print(
+                f"      {field_name:<14} absent flag {zt['absent_flag_correct']} ok / "
+                f"{zt['absent_flag_mismatched']} wrong   "
+                f"raised for review {zt['review_flag_correct']} ok / "
+                f"{zt['review_flag_wrong']} wrong{mark}"
             )
 
         print(f"\n    citation validity  {_pct(summary['citation_validity'])}")

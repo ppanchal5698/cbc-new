@@ -41,13 +41,31 @@ schedule_pages: [15]
 #
 # Columns ABSENT from this schedule, for every row:
 #   * FIRE RATING — no rating column, no label column, no rating in any note.
-#     Nothing on any of the 65 pages assigns a rating to an opening. Every row is
-#     therefore `fire_rating_absent: true` (§5.8). This is the zero-tolerance
-#     case, and it is the reason this bid set was chosen.
+#     Nothing on any of the 65 pages assigns a rating to an opening.
 #   * HANDING — no hand column and no LH/RH anywhere in the schedule. Handing is
 #     inferable from the floor plan swing arcs by a human, which is exactly why
 #     the system must NOT infer it: a guessed hand orders a door that will not
-#     hang. Every row is `handing_absent: true`.
+#     hang.
+#
+# ── `*_absent` is FALSE here, and that is the point ─────────────────────────
+#
+# These labels originally said `fire_rating_absent: true`. That was wrong, and
+# wrong in the direction that matters.
+#
+# `fire_rating_absent: true` is a POSITIVE CLAIM: the schedule states the opening
+# is unrated — a cell reading "NR", "NONE", "N/A". It is a finding an estimator
+# can act on.
+#
+# This schedule says nothing at all. It has no rating column. That is a different
+# state: nothing was extracted, and a human must confirm whether the opening is
+# genuinely unrated or the rating lives somewhere nobody has looked yet (Open
+# Item 9). Recording it as `absent: true` would convert silence into a
+# code-compliance claim, which is exactly what §5.8 forbids — and it is a claim
+# about fire safety that no one made.
+#
+# So the expectation is `absent: false` PLUS `flagged: true`. Null carries the
+# value; the boolean carries whether anyone confirmed it; the flag carries that
+# someone still must.
 #   * SIZE is TWO columns, W and H, not one cell. `size_raw` is therefore the two
 #     cell texts joined by a single space, exactly as extraction prompt v2 rule 3
 #     requires. It is deliberately NOT "W x H": grounding normalises punctuation
@@ -73,10 +91,13 @@ openings:
     hardware_group: "GROUP 1"
     schedule_notes: "A,B,C,D,E,F"
     handing: null
-    handing_absent: true
+    # Not extracted, not confirmed unhanded. See the note above.
+    handing_absent: false
+    handing_flagged: true
     fire_rating_raw: null
     fire_rating_minutes: null
-    fire_rating_absent: true
+    fire_rating_absent: false
+    fire_rating_flagged: true
     finish_raw: null
     wall_type: null
 
@@ -92,10 +113,13 @@ openings:
     hardware_group: "GROUP 2"
     schedule_notes: "A,B,C,D,E,F"
     handing: null
-    handing_absent: true
+    # Not extracted, not confirmed unhanded. See the note above.
+    handing_absent: false
+    handing_flagged: true
     fire_rating_raw: null
     fire_rating_minutes: null
-    fire_rating_absent: true
+    fire_rating_absent: false
+    fire_rating_flagged: true
     finish_raw: null
     wall_type: null
 
@@ -113,10 +137,13 @@ openings:
     hardware_group: "GROUP 3"
     schedule_notes: "B,D,F,G"
     handing: null
-    handing_absent: true
+    # Not extracted, not confirmed unhanded. See the note above.
+    handing_absent: false
+    handing_flagged: true
     fire_rating_raw: null
     fire_rating_minutes: null
-    fire_rating_absent: true
+    fire_rating_absent: false
+    fire_rating_flagged: true
     finish_raw: null
     wall_type: null
 
@@ -136,10 +163,13 @@ openings:
     hardware_group: "GROUP 6"
     schedule_notes: null
     handing: null
-    handing_absent: true
+    # Not extracted, not confirmed unhanded. See the note above.
+    handing_absent: false
+    handing_flagged: true
     fire_rating_raw: null
     fire_rating_minutes: null
-    fire_rating_absent: true
+    fire_rating_absent: false
+    fire_rating_flagged: true
     finish_raw: null
     wall_type: null
 

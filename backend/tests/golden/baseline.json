@@ -153,6 +153,20 @@
       "model_id": "us.anthropic.claude-sonnet-4-6",
       "openings_expected": 4,
       "openings_found": 4,
+      "zero_tolerance": {
+        "fire_rating": {
+          "absent_flag_correct": 4,
+          "absent_flag_mismatched": 0,
+          "review_flag_correct": 4,
+          "review_flag_wrong": 0
+        },
+        "handing": {
+          "absent_flag_correct": 4,
+          "absent_flag_mismatched": 0,
+          "review_flag_correct": 4,
+          "review_flag_wrong": 0
+        }
+      },
       "openings_spurious": [],
       "openings_absent": [],
       "citation_validity": 1.0,
