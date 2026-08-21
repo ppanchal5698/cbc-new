@@ -14,8 +14,11 @@ def api_client():
 @pytest.fixture
 def user(db):
     from django.contrib.auth import get_user_model
+    # is_active is explicit: create_user defaults it to False so that a forgotten
+    # flag produces an account that cannot sign in rather than one that silently
+    # can. A test fixture is one of the few places that genuinely wants True.
     return get_user_model().objects.create_user(
-        username="testuser", password="testpass123", email="test@cbc.test"
+        email="test@cbc.test", password="testpass123", is_active=True
     )
 
 

@@ -33,12 +33,13 @@ from quotes.models import Quote, QuoteLine, VendorRFQ
 class UserFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = get_user_model()
-        django_get_or_create = ("username",)
+        django_get_or_create = ("email",)
         # set_password already saves; the extra post-generation save is redundant.
         skip_postgeneration_save = True
 
-    username = factory.Sequence(lambda n: f"estimator{n}")
-    email = factory.LazyAttribute(lambda o: f"{o.username}@cbc.test")
+    email = factory.Sequence(lambda n: f"estimator{n}@cbc.test")
+    full_name = factory.Sequence(lambda n: f"Estimator {n}")
+    is_active = True
     password = factory.PostGenerationMethodCall("set_password", "testpass123")
 
 

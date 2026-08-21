@@ -42,7 +42,53 @@ PROTECTED_ENDPOINTS = [
     "/api/vendor-rfqs/",
     "/api/feedback/",
     "/api/extraction-metrics/",
+    # Authenticated auth routes. Signing in is public; everything you do once
+    # signed in is not.
+    "/api/auth/logout/",
+    "/api/auth/me/",
+    "/api/auth/change-password/",
 ]
+
+#: Custom actions hanging off a detail route.
+#:
+#: These were invisible to the old coverage check, which filtered on path depth —
+#: and they are the endpoints that *do* things: approve a quote, force-read a
+#: skipped page, override a provenance value, upload a document. Probed with a nil
+#: UUID because DRF authenticates before it resolves an object, so an anonymous
+#: caller is refused rather than told whether the id exists.
+DETAIL_ACTION_ENDPOINTS = [
+    "/api/projects/{id}/documents/",
+    "/api/documents/{id}/manifest/",
+    "/api/documents/{id}/page-diffs/",
+    "/api/documents/{id}/pipeline-jobs/",
+    "/api/manifest/{id}/force-read/",
+    "/api/openings/{id}/matches/",
+    "/api/openings/{id}/needs-review/",
+    "/api/matches/{id}/accept/",
+    "/api/matches/{id}/reject/",
+    "/api/provenance/{id}/override/",
+    "/api/provenance/{id}/source/",
+    "/api/quotes/search/",
+    "/api/quotes/{id}/approve/",
+    "/api/quotes/{id}/export/",
+    "/api/quotes/{id}/recalculate/",
+    "/api/vendor-rfqs/{id}/record-price/",
+]
+
+NIL_UUID = "00000000-0000-0000-0000-000000000000"
+
+#: The only endpoints an anonymous caller may reach, and why.
+#:
+#: Asserted as an exact set below rather than a minimum. The previous coverage
+#: check filtered schema paths on ``path.count("/") == 3``, which quietly excluded
+#: everything under ``/api/auth/`` — so a new *public* endpoint, the exact thing
+#: this file exists to catch, slipped through on path depth alone.
+PUBLIC_ENDPOINTS = {
+    "/api/health/",            # the load balancer cannot authenticate
+    "/api/auth/signup/",       # requesting access, which grants none
+    "/api/auth/login/",        # the door
+    "/api/auth/token/",        # the same door, for scripts
+}
 
 DENIED = (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
 
@@ -95,13 +141,44 @@ class TestEveryEndpointIsProtected:
         listed = set(PROTECTED_ENDPOINTS)
         response = auth_client.get("/api/schema/")
         assert response.status_code == status.HTTP_200_OK
+
+        # Every non-detail path the API publishes. No depth filter: an endpoint
+        # nested one segment deeper is not thereby less sensitive, and the old
+        # `count("/") == 3` rule excluded all of /api/auth/ by accident.
         schema_paths = {
             path
             for path in response.data["paths"]
-            if path.count("/") == 3 and not path.endswith("}/") and "schema" not in path
+            if not path.endswith("}/") and "schema" not in path
         }
-        missing = schema_paths - listed - {"/api/health/"}
-        assert not missing, f"these list endpoints have no protection test: {sorted(missing)}"
+        covered = listed | set(DETAIL_ACTION_ENDPOINTS) | PUBLIC_ENDPOINTS
+        missing = schema_paths - covered
+        assert not missing, f"these endpoints have no protection test: {sorted(missing)}"
+
+    @pytest.mark.parametrize("template", DETAIL_ACTION_ENDPOINTS)
+    def test_detail_actions_refuse_anonymous_callers(self, api_client, template):
+        """
+        The endpoints that act rather than read. DRF authenticates before it
+        resolves the object, so a refusal here is about credentials and not about
+        whether the id happens to exist.
+        """
+        path = template.format(id=NIL_UUID)
+        assert api_client.get(path).status_code in DENIED
+        assert api_client.post(path, {}, format="json").status_code in DENIED
+
+    def test_the_public_surface_is_exactly_what_we_expect(self, api_client):
+        """
+        Anonymous reachability, asserted as an exact set.
+
+        Making an endpoint public should require editing PUBLIC_ENDPOINTS, which is
+        a decision someone reviews — not adding a view with AllowAny and hoping a
+        path-depth filter notices.
+        """
+        for path in sorted(PUBLIC_ENDPOINTS):
+            response = api_client.get(path)
+            assert response.status_code not in (
+                status.HTTP_401_UNAUTHORIZED,
+                status.HTTP_403_FORBIDDEN,
+            ), f"{path} is listed public but refuses anonymous callers"
 
 
 class TestHealthIsIntentionallyOpen:
@@ -143,3 +220,18 @@ class TestAuthenticatedAccess:
         assert settings.REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"] == [
             "rest_framework.permissions.IsAuthenticated"
         ]
+
+
+class TestThrottlingIsConfigured:
+    def test_the_anonymous_endpoints_carry_a_rate(self, settings):
+        """
+        A public login endpoint with no ceiling is an open brute-force target. The
+        rates themselves are a judgement call; their existence is not.
+
+        Asserted here rather than beside the login tests, because those null the
+        rates out to stay deterministic — and a test that checks a value its own
+        fixture just erased proves nothing.
+        """
+        rates = settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]
+        for scope in ("login", "signup", "token", "password"):
+            assert rates.get(scope), f"{scope} has no throttle rate"

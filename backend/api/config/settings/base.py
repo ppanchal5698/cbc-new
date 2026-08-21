@@ -150,6 +150,10 @@ DATABASES = {
 # deferred; if SSO is later required it sits in FRONT of Django as an OIDC
 # provider and Django still owns permissions and the audit trail.
 
+# Django auth is the system of record (C3 / ADR-0004). Email is the identity;
+# see authentication/models.py for why there is no username.
+AUTH_USER_MODEL = "authentication.User"
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -202,6 +206,18 @@ REST_FRAMEWORK = {
     # our own API host.
     "DEFAULT_PAGINATION_CLASS": "common.pagination.StandardPagination",
     "PAGE_SIZE": 100,
+    # A public login endpoint with no rate limit is an open brute-force target,
+    # and the anonymous scopes below are the only ones that matter — an
+    # authenticated caller is already someone an admin let in.
+    "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.ScopedRateThrottle"],
+    "DEFAULT_THROTTLE_RATES": {
+        # Deliberately tight. A human types a password wrong three times, not
+        # three hundred; anything near this ceiling is a script.
+        "login": "10/min",
+        "signup": "5/hour",
+        "token": "10/min",
+        "password": "10/hour",
+    },
 }
 
 SPECTACULAR_SETTINGS = {
