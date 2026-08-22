@@ -4,8 +4,7 @@
 # FAKE_OCR=1 to replay a recorded OCR JSON so the whole pipeline runs with no AWS
 # calls and no spend.
 #
-# The frontend is a separate deliverable and is deliberately not a service here —
-# `docker compose up` must bring up a healthy backend on its own.
+# Five services: postgres, ministack, api, pipeline, frontend (§8.3).
 
 name: cbc-copilot
 
@@ -127,6 +126,9 @@ services:
       DATABASE_URL: postgresql://postgres:password@postgres:5432/cbccopilot
       DJANGO_SETTINGS_MODULE: config.settings.local
       ALLOWED_HOSTS: api,localhost,127.0.0.1
+      # Page rasters are fetched by the BROWSER, which cannot resolve the
+      # compose service name the API itself uses for the emulator.
+      PUBLIC_RASTER_ENDPOINT_URL: http://localhost:4566
       PYTHONPATH: /app:/app/api
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/api/health/')\""]
@@ -178,6 +180,41 @@ services:
         condition: service_healthy
       bootstrap:
         condition: service_completed_successfully
+      api:
+        condition: service_started
+
+  frontend:
+    # Next.js 16 App Router. Talks to Django directly from the browser with the
+    # session cookie, so NEXT_PUBLIC_API_BASE_URL is the origin the *browser*
+    # reaches the API on — localhost, not the compose service name.
+    build:
+      context: ./frontend
+      target: dev
+    # Editing a file hot-reloads. *Adding* a route file does not: Docker
+    # Desktop's Windows bind mount does not deliver creation events into the
+    # container, under either bundler and with or without polling. After adding
+    # a page, `docker compose restart frontend`.
+    command: npm run dev
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      # Keep the image's node_modules; the host has its own and they are not
+      # interchangeable once a native module is involved.
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+      WATCHPACK_POLLING: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/login || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    depends_on:
       api:
         condition: service_started
 

@@ -3,6 +3,7 @@
 from django.db import connection
 from django.http import HttpResponseForbidden
 from django.urls import reverse
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import TemplateView
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -26,6 +27,9 @@ from shared.config import get_settings
 # nothing beyond liveness: no version, no hostname, no configuration.
 @authentication_classes([])
 @permission_classes([])
+# Also how the browser client obtains its CSRF token: it is the one endpoint a
+# signed-out page can call, and every later unsafe request needs the cookie.
+@ensure_csrf_cookie
 def health(request):
     settings_obj = get_settings()
     try:

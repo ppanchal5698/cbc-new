@@ -219,6 +219,11 @@ class Settings:
     s3_source_bucket: str
     s3_derived_bucket: str
     cloudfront_domain: str | None
+    #: Browser-facing origin for page rasters, when it differs from the endpoint
+    #: the API itself uses. Local only: inside compose the emulator is
+    #: ``ministack:4566``, a name no browser can resolve. CloudFront covers this
+    #: everywhere else, so it stays unset in staging and production.
+    public_raster_endpoint_url: str | None
 
     # -- queues (§3.1, C6) ------------------------------------------------
     document_ready_queue: str
@@ -423,6 +428,7 @@ def _build() -> Settings:
         s3_source_bucket=env_str("S3_SOURCE_BUCKET"),
         s3_derived_bucket=env_str("S3_DERIVED_BUCKET"),
         cloudfront_domain=env_str("CLOUDFRONT_DOMAIN", None),
+        public_raster_endpoint_url=env_str("PUBLIC_RASTER_ENDPOINT_URL", None),
         document_ready_queue=env_str("DOCUMENT_READY_QUEUE", "document-ready"),
         document_ready_dlq=env_str("DOCUMENT_READY_DLQ", "document-ready-dlq"),
         ocr_complete_queue=env_str("OCR_COMPLETE_QUEUE", "ocr-complete"),

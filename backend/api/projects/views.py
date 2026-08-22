@@ -21,6 +21,7 @@ from rest_framework.response import Response
 from shared.enums import DocumentStatus, FeedbackEntity, OCRRoute, PipelineStage
 from shared.s3_keys import get_source_document_key
 
+from .board import BOARD_FILTERS, annotate_board, board_totals
 from .models import BidAlternate, Document, DocumentManifest, PageDiff, PipelineJob, Project
 from .serializers import (
     BidAlternateSerializer,
@@ -43,9 +44,12 @@ class ProjectViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminForDestroy]
 
     queryset = Project.objects.all().order_by("-created_at")
-    filterset_fields = ["source_channel", "brand", "architect", "general_contractor"]
+    filterset_fields = [
+        "source_channel", "brand", "architect", "general_contractor", "outcome",
+        "initiator_user",
+    ]
     search_fields = ["name", "initiator_email", "brand", "architect", "general_contractor"]
-    ordering_fields = ["created_at", "name"]
+    ordering_fields = ["created_at", "name", "due_date", "quoted_value"]
 
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):
@@ -53,12 +57,51 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return ProjectSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        if self.action == "list":
+        qs = annotate_board(super().get_queryset().select_related("initiator_user"))
+        if self.action in ("list", "summary"):
             # The list view does not need every nested document, and prefetching
             # them for a hundred projects is the kind of fan-out §9 warns about.
+            # The board columns are derived, not stored — see projects/board.py.
             return qs.annotate(document_count=Count("documents"))
+        # The detail view carries them too: the job record on Stage 1 shows the
+        # same status the board does, and the two disagreeing would be worse than
+        # either being absent.
         return qs.prefetch_related("documents")
+
+    def filter_queryset(self, queryset):
+        """
+        The board's filter chips, on top of the ordinary DRF filters.
+
+        They select on ``board_status``, which is an annotation rather than a
+        column, so django-filter cannot express them — but a Q against the
+        annotation can, and it stays in one place (:data:`BOARD_FILTERS`).
+        """
+        queryset = super().filter_queryset(queryset)
+        chip = self.request.query_params.get("board_filter")
+        if chip == "Mine":
+            user = self.request.user
+            return queryset.filter(initiator_user=user) if user.is_authenticated else queryset.none()
+        if chip and chip in BOARD_FILTERS:
+            return queryset.filter(BOARD_FILTERS[chip])
+        return queryset
+
+    @extend_schema(
+        summary="Bid-board header totals for the current filter",
+        parameters=[
+            OpenApiParameter(
+                "board_filter", str, description="All / Mine / In flight / Sent / Closed"
+            )
+        ],
+        responses={200: dict},
+        description=(
+            "Counted across every matching bid, not just the page — a header that "
+            "silently described one page of a filtered board would be wrong more "
+            "often than right."
+        ),
+    )
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        return Response(board_totals(self.filter_queryset(self.get_queryset())))
 
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None

@@ -39,17 +39,48 @@ class DocumentUploadSerializer(serializers.Serializer):
 
 
 class ProjectSerializer(serializers.ModelSerializer):
+    """
+    A bid, as the board and the job record show it.
+
+    The four board columns below are **annotations, not columns** — see
+    :mod:`projects.board` for why status is derived from the pipeline rather than
+    stored beside it. They are absent unless the view annotated them, which is why
+    each declares a default.
+    """
+
     documents = DocumentSerializer(many=True, read_only=True)
     document_count = serializers.IntegerField(read_only=True, required=False)
+
+    board_status = serializers.CharField(read_only=True, required=False)
+    quoted_value = serializers.DecimalField(
+        max_digits=14, decimal_places=2, read_only=True, required=False
+    )
+    flag_count = serializers.IntegerField(read_only=True, required=False)
+    version_label = serializers.CharField(read_only=True, required=False)
+    estimator_initials = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
         fields = [
             "id", "name", "source_channel", "initiator_email", "initiator_user",
             "rfp_body_text", "brand", "architect", "general_contractor",
+            "due_date", "outcome",
+            "board_status", "quoted_value", "flag_count", "version_label",
+            "estimator_initials",
             "documents", "document_count", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_estimator_initials(self, obj) -> str:
+        """The board's Est. column. Falls back to the initiator's email."""
+        user = obj.initiator_user
+        source = (user.full_name if user and user.full_name else None) or (
+            user.email if user else obj.initiator_email
+        )
+        parts = [p for p in (source or "").replace("@", " ").split() if p]
+        if len(parts) >= 2:
+            return (parts[0][0] + parts[-1][0]).upper()
+        return (parts[0][:2].upper() if parts else "--")
 
 
 class ProjectWriteSerializer(serializers.ModelSerializer):
@@ -68,7 +99,8 @@ class ProjectWriteSerializer(serializers.ModelSerializer):
         # act on, and every caller immediately needs it to upload documents.
         fields = [
             "id", "name", "source_channel", "initiator_email", "initiator_user",
-            "rfp_body_text", "brand", "architect", "general_contractor", "created_at",
+            "rfp_body_text", "brand", "architect", "general_contractor",
+            "due_date", "outcome", "created_at",
         ]
         read_only_fields = ["id", "created_at"]
 

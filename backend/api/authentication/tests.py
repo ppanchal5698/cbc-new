@@ -22,6 +22,9 @@ pytestmark = pytest.mark.django_db
 #: Every list endpoint. All of them read customer drawings, pricing, or both.
 PROTECTED_ENDPOINTS = [
     "/api/projects/",
+    # The bid board's header totals. A list-level action, and it counts money
+    # across every bid — protected exactly as the list it summarises.
+    "/api/projects/summary/",
     "/api/documents/",
     "/api/manifest/",
     "/api/pipeline-jobs/",

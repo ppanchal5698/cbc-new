@@ -43,6 +43,40 @@ class SourceChannel(StrEnum):
     PHONE = "PHONE"
 
 
+class BidOutcome(StrEnum):
+    """
+    How a bid ended. Null until someone knows.
+
+    Deliberately only the two facts the system cannot work out for itself. Every
+    other state the bid board shows -- intake, extracting, review, awaiting
+    vendor, sent -- is derived from the pipeline, the flags, and the quote, so
+    storing it would be a second source of truth that goes stale the moment the
+    worker moves on. See :class:`BoardStatus`.
+    """
+
+    WON = "WON"
+    LOST = "LOST"
+
+
+class BoardStatus(StrEnum):
+    """
+    What the bid board shows in its Status column. **Derived, never stored.**
+
+    Computed by :func:`projects.board.annotate_board` in one query set. The order
+    of the members is the order the derivation tests them: the first that holds
+    wins.
+    """
+
+    WON = "Won"
+    LOST = "Lost"
+    SENT = "Sent"
+    AWAITING_VENDOR = "Awaiting vendor"
+    EXTRACTING = "Extracting"
+    REVIEW = "Review"
+    IN_PROGRESS = "In progress"
+    INTAKE = "Intake"
+
+
 class DocumentStatus(StrEnum):
     """
     Lifecycle of one uploaded PDF.

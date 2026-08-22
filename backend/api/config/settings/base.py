@@ -123,6 +123,13 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
+# The frontend authenticates with the Django session cookie rather than holding a
+# token in JavaScript, so the browser has to be allowed to send it cross-origin —
+# and Django has to trust the same origins for CSRF. One env var drives both:
+# two lists that can disagree is a login that works until someone edits one of them.
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
+
 
 # ---------------------------------------------------------------------------
 # Database
@@ -223,6 +230,10 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_FILTER_BACKENDS": [
         "django_filters.rest_framework.DjangoFilterBackend",
+        # Every viewset already declares `search_fields`; without this backend
+        # they were decoration and `?search=` was silently ignored — a filter
+        # that answers with the unfiltered list is worse than no filter at all.
+        "rest_framework.filters.SearchFilter",
         "rest_framework.filters.OrderingFilter",
     ],
     # Authenticated by default. Every endpoint touches customer drawings or

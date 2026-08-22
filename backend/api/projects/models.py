@@ -12,6 +12,7 @@ from django.conf import settings
 from django.db import models
 
 from shared.enums import (
+    BidOutcome,
     ClassMethod,
     DocumentRole,
     DocumentStatus,
@@ -66,6 +67,24 @@ class Project(TimestampedModel):
     brand = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     architect = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     general_contractor = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+
+    # The date the GC wants the number by. Not derivable from anything the system
+    # holds, and it is what the bid board sorts and colours by.
+    due_date = models.DateField(
+        null=True, blank=True, db_index=True, help_text="Bid due date, as given by the GC."
+    )
+
+    # Won/lost only. Everything else the board shows is derived from the pipeline,
+    # the review flags, and the quote (see shared.enums.BoardStatus) rather than
+    # stored, so there is nothing to keep in step by hand.
+    outcome = models.CharField(
+        max_length=10,
+        choices=BidOutcome.choices(),
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="WON or LOST once the bid is decided. Null while it is live.",
+    )
 
     class Meta:
         indexes = [

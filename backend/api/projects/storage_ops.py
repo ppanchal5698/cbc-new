@@ -188,6 +188,9 @@ def public_raster_url(key: str) -> str:
     settings_obj = get_settings()
     if settings_obj.cloudfront_domain:
         return f"https://{settings_obj.cloudfront_domain}/{key}"
-    if settings_obj.aws_endpoint_url:
-        return f"{settings_obj.aws_endpoint_url}/{settings_obj.s3_derived_bucket}/{key}"
+    # The browser has to be able to resolve this, and the endpoint the API talks
+    # to locally is a compose service name that it cannot.
+    endpoint = settings_obj.public_raster_endpoint_url or settings_obj.aws_endpoint_url
+    if endpoint:
+        return f"{endpoint}/{settings_obj.s3_derived_bucket}/{key}"
     return f"https://{settings_obj.s3_derived_bucket}.s3.{settings_obj.aws_region}.amazonaws.com/{key}"

@@ -1,0 +1,69 @@
+/*
+ * Design tokens and reset, lifted verbatim from html/HP Prototype v1.0 (1).html.
+ * The prototype is the source of truth for layout and design; do not re-express
+ * these as utility classes — that is a redesign, not a port.
+ *
+ * --app-font is Manrope, injected as a CSS variable by next/font in layout.tsx.
+ */
+[data-theme="dark"] {
+    --app-bg:#0a0a12; --app-bg-2:#0e0e18; --app-panel:#15151f; --app-panel-2:#1b1b28;
+    --app-line:rgba(255,255,255,0.075); --app-tx:#f3f3f8; --app-tx-2:#a2a2b8; --app-tx-3:#6e6e88;
+    --app-accent:#818cf8; --app-accent-soft:rgba(129,140,248,0.14); --app-accent-line:rgba(129,140,248,0.28);
+    --app-neg:#fb7185; --app-neg-soft:rgba(251,113,133,0.14); --app-neg-line:rgba(251,113,133,0.3);
+    --app-pos:#34d399; --app-warn:#fbbf24;
+    --app-sh-1:0 1px 2px rgba(0,0,0,0.4); --app-sh-2:0 8px 24px rgba(0,0,0,0.45); --app-sh-3:0 24px 60px rgba(0,0,0,0.6);
+  }
+  [data-theme="light"] {
+    --app-bg:#f6f6fa; --app-bg-2:#ffffff; --app-panel:#ffffff; --app-panel-2:#f1f1f7;
+    --app-line:#e7e7f0; --app-tx:#15151f; --app-tx-2:#55556b; --app-tx-3:#8b8ba3;
+    --app-accent:#5b5bd6; --app-accent-soft:rgba(91,91,214,0.08); --app-accent-line:rgba(91,91,214,0.22);
+    --app-neg:#e11d48; --app-neg-soft:rgba(225,29,72,0.07); --app-neg-line:rgba(225,29,72,0.22);
+    --app-pos:#059669; --app-warn:#b45309;
+    --app-sh-1:0 1px 2px rgba(20,20,40,0.06); --app-sh-2:0 8px 24px rgba(20,20,40,0.08); --app-sh-3:0 24px 60px rgba(20,20,40,0.14);
+  }
+    /* next/font supplies --font-manrope; the fallback keeps the raw family name working. */
+  :root { --app-font:var(--font-manrope),"Manrope",system-ui,sans-serif; --app-font-h:var(--font-manrope),"Manrope",system-ui,sans-serif; }
+  html, body { margin:0; padding:0; height:100%; background:#0a0a12; }
+  input::placeholder, textarea::placeholder { color:var(--app-tx-3); }
+  button { color:inherit; }
+
+
+
+  html, body { margin:0; padding:0; height:100%; overflow-x:auto; overflow-y:hidden; background:var(--app-bg); }
+  * { box-sizing:border-box; }
+  ::-webkit-scrollbar { width:9px; height:9px; }
+  ::-webkit-scrollbar-thumb { background:var(--app-tx-3); border-radius:9px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  a { color:var(--app-accent); text-decoration:none; }
+  a:hover { color:var(--app-accent); text-decoration:underline; }
+  input:focus-visible, button:focus-visible { outline:2px solid var(--app-accent); outline-offset:2px; }
+  @keyframes sweep { 0% { transform:translateX(-100%); } 100% { transform:translateX(300%); } }
+  @keyframes fadein { from { opacity:0; transform:translateY(3px); } to { opacity:1; transform:none; } }
+  @keyframes popin { from { transform:scale(0.97); opacity:0; } to { transform:none; opacity:1; } }
+  @keyframes slidein { from { transform:translateX(24px); opacity:0; } to { transform:none; opacity:1; } }
+  @keyframes riseup { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+
+/* Hover rules from the prototype's `style-hover` attribute. React has no
+ * pseudo-classes, so each distinct rule is one generated class. Regenerate
+ * with ops/scratch codemod if the prototype changes; never hand-edit. */
+.hv-02e8c9:hover { background:rgba(129,140,248,0.09); }
+.hv-04c7f2:hover { color:var(--app-neg); border-color:var(--app-neg-line); }
+.hv-05d365:hover { opacity:0.9; }
+.hv-114a69:hover { color:var(--app-tx); }
+.hv-1a63cc:hover { color:var(--app-accent); }
+.hv-1afc26:hover { border-color:var(--app-accent); }
+.hv-2358e6:hover { background:var(--app-neg-soft); }
+.hv-36ec74:hover { text-decoration:underline; }
+.hv-40d530:hover { background:var(--app-bg-2); }
+.hv-4c0e19:hover { background:var(--app-accent-soft); }
+.hv-5e4ad0:hover { background:var(--app-accent); }
+.hv-5fd9a4:hover { color:var(--app-accent); border-color:var(--app-accent-line); }
+.hv-78b3f3:hover { color:var(--app-neg); }
+.hv-7d6430:hover { color:#22d3ee; border-color:rgba(34,211,238,0.4); }
+.hv-8bcdf4:hover { color:var(--app-tx); border-color:var(--app-accent-line); }
+.hv-8bebbc:hover { opacity:0.88; }
+.hv-b20764:hover { background:var(--app-line); }
+.hv-be10ad:hover { background:var(--app-panel-2); }
+.hv-f07bf9:hover { background:rgba(244,114,182,0.12); }
+.hv-f6411e:hover { opacity:0.85; }
+.hv-f68886:hover { border-color:var(--app-accent-line); }

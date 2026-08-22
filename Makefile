@@ -19,13 +19,14 @@ PIPE    := $(COMPOSE) exec -T pipeline
 PYTEST  := $(COMPOSE) exec -T -w /app api pytest
 # Same reason: linting from /app/api leaves pipeline/, shared/ and tests/ unchecked.
 RUFF    := $(COMPOSE) exec -T -w /app api ruff
+WEB     := $(COMPOSE) exec -T frontend
 
 help:  ## List targets
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 # ── stack ────────────────────────────────────────────────────────────────────
 
-up:  ## Build and start postgres, ministack, api, pipeline
+up:  ## Build and start postgres, ministack, api, pipeline, frontend
 	$(COMPOSE) up --build -d
 	@echo "waiting for health..."
 	@$(COMPOSE) ps
@@ -76,8 +77,9 @@ calibrate:  ## Per-field confidence threshold curve for CBC to pick an operating
 cost-report:  ## Per-bid-set AWS cost attribution from live tables (§10.3)
 	$(PIPE) python ops/scripts/cost_report.py
 
-lint:  ## ruff across the whole backend, not just api/
+lint:  ## ruff across the whole backend, and tsc across the frontend
 	$(RUFF) check .
+	$(WEB) npx tsc --noEmit
 
 format:  ## Apply ruff autofixes
 	$(RUFF) check --fix .

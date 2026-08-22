@@ -28,8 +28,13 @@ cp .env.example .env
 make up
 ```
 
-That brings up Postgres, MiniStack (S3/SQS/SNS/SSM), the Django API, and the
-FastAPI worker, migrated and seeded. `make help` lists every target.
+That brings up Postgres, MiniStack (S3/SQS/SNS/SSM), the Django API, the
+FastAPI worker, and the Next.js frontend, migrated and seeded. `make help` lists
+every target.
+
+The estimator's app — **Ops-Hub** — is at <http://localhost:3000>. Its layout and
+design are a port of `html/HP Prototype v1.0 (1).html`; its types are generated
+from the API schema by `make types` and are never hand-written.
 
 Textract and Bedrock are the only services without a local substitute. `FAKE_OCR=1`
 replays OCR from the PDF's own text layer, so the whole pipeline runs offline with

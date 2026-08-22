@@ -58,11 +58,26 @@ def _geometry(rect: pymupdf.Rect, width: float, height: float) -> dict:
 
 
 def synthesize_page(page: pymupdf.Page, page_number: int, *, with_tables: bool) -> list[dict]:
-    """Build Textract-shaped blocks for one page."""
+    """
+    Build Textract-shaped blocks for one page.
+
+    **Rotation.** ``page.rect`` and ``get_pixmap`` are both in the page's *visual*
+    orientation, but ``get_text`` reports coordinates in its **unrotated** one: on
+    a ``/Rotate 90`` sheet a word at (72, 85) comes back at (72, 85) while the
+    page it belongs to has swapped its width and height. Dividing one by the other
+    puts every highlight in the wrong place — the failure §4.5 singles out. So
+    every rect is mapped through ``page.rotation_matrix`` first, which is the
+    identity on an unrotated page and costs nothing there.
+    """
     blocks: list[dict] = []
     width, height = page.rect.width, page.rect.height
     if not width or not height:
         return blocks
+
+    rotate = page.rotation_matrix
+
+    def visual(rect: pymupdf.Rect) -> pymupdf.Rect:
+        return pymupdf.Rect(rect) * rotate
 
     counter = 0
 
@@ -93,7 +108,7 @@ def synthesize_page(page: pymupdf.Page, page_number: int, *, with_tables: bool) 
                             "RowIndex": row_index + 1,
                             "ColumnIndex": col_index + 1,
                             "EntityTypes": ["COLUMN_HEADER"] if row_index == 0 else [],
-                            "Geometry": _geometry(pymupdf.Rect(table.bbox), width, height),
+                            "Geometry": _geometry(visual(pymupdf.Rect(table.bbox)), width, height),
                         }
                     )
             blocks.append(
@@ -101,7 +116,7 @@ def synthesize_page(page: pymupdf.Page, page_number: int, *, with_tables: bool) 
                     "BlockType": "TABLE",
                     "Id": next_id(f"table{table_index}"),
                     "Page": page_number,
-                    "Geometry": _geometry(pymupdf.Rect(table.bbox), width, height),
+                    "Geometry": _geometry(visual(pymupdf.Rect(table.bbox)), width, height),
                     "Relationships": [{"Type": "CHILD", "Ids": cell_ids}],
                 }
             )
@@ -117,7 +132,7 @@ def synthesize_page(page: pymupdf.Page, page_number: int, *, with_tables: bool) 
                 "Text": text,
                 # No Confidence key: nothing was recognised, so there is nothing to
                 # be confident about. Normalisation stores null.
-                "Geometry": _geometry(pymupdf.Rect(x0, y0, x1, y1), width, height),
+                "Geometry": _geometry(visual(pymupdf.Rect(x0, y0, x1, y1)), width, height),
             }
         )
 
