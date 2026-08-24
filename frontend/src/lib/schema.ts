@@ -21,6 +21,8 @@ export type Quote = Schemas["Quote"];
 export type QuoteLine = Schemas["QuoteLine"];
 export type VendorRFQ = Schemas["VendorRFQ"];
 export type HardwareSetComponent = Schemas["HardwareSetComponent"];
+export type Note = Schemas["Note"];
+export type CatalogItemXref = Schemas["CatalogItemXref"];
 
 // Reference library and price books (§7.5). Every one of these carries an
 // effective date, because NFR-3 requires a quote to be traceable to the exact

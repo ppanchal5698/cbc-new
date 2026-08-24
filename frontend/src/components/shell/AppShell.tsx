@@ -32,12 +32,19 @@ export function AppShell({
   crumbs,
   progress,
   actionBar,
+  notes,
   children,
 }: {
   crumbs: Crumb[];
   /** The bid-progress stepper. Only the estimate workspace has one. */
   progress?: React.ReactNode;
   actionBar?: React.ReactNode;
+  /**
+   * Supplied only inside an estimate. A note is logged *against a bid*, so on the
+   * catalogue and the price books there is genuinely nothing to log one against —
+   * the button says so rather than opening a modal with no subject.
+   */
+  notes?: { count: number; onOpen: () => void };
   children: React.ReactNode;
 }) {
   const { data: me } = useMe();
@@ -51,7 +58,7 @@ export function AppShell({
         gridTemplateRows: "54px auto minmax(0,1fr) auto",
       }}
     >
-      <TopBar crumbs={crumbs} me={me ?? null} />
+      <TopBar crumbs={crumbs} me={me ?? null} notes={notes} />
       <Rail me={me ?? null} />
 
       <div style={{ gridColumn: "2", gridRow: "2", minWidth: 0 }}>{progress}</div>
@@ -74,7 +81,15 @@ export function AppShell({
   );
 }
 
-function TopBar({ crumbs, me }: { crumbs: Crumb[]; me: Profile | null }) {
+function TopBar({
+  crumbs,
+  me,
+  notes,
+}: {
+  crumbs: Crumb[];
+  me: Profile | null;
+  notes?: { count: number; onOpen: () => void };
+}) {
   const { toggleTheme, theme } = useChrome();
   const router = useRouter();
   const logout = useLogout();
@@ -109,12 +124,16 @@ function TopBar({ crumbs, me }: { crumbs: Crumb[]; me: Profile | null }) {
       </div>
 
       <button
-        disabled
-        title={NOT_YET("calls and notes are their own phase")}
+        onClick={notes?.onOpen}
+        disabled={!notes}
+        title={notes ? "Log a call or note against this bid" : "Open a bid to log a call against it."}
         className="hv-5fd9a4"
-        style={{ position: "relative", display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 12px", borderRadius: "10px", background: "var(--app-panel)", border: "1px solid var(--app-line)", color: "var(--app-tx-2)", fontFamily: "var(--app-font)", fontSize: "12.5px", fontWeight: "600", cursor: "not-allowed", whiteSpace: "nowrap", transition: "all 160ms cubic-bezier(0.32,0.72,0,1)" }}
+        style={{ position: "relative", display: "flex", alignItems: "center", gap: "7px", height: "34px", padding: "0 12px", borderRadius: "10px", background: "var(--app-panel)", border: "1px solid var(--app-line)", color: notes ? "var(--app-tx-2)" : "var(--app-tx-3)", fontFamily: "var(--app-font)", fontSize: "12.5px", fontWeight: "600", cursor: notes ? "pointer" : "not-allowed", whiteSpace: "nowrap", transition: "all 160ms cubic-bezier(0.32,0.72,0,1)" }}
       >
         <i className="ph-duotone ph-phone-call" style={{ fontSize: "16px" }}></i>Calls &amp; notes
+        {notes?.count ? (
+          <span style={{ fontSize: "11px", color: "var(--app-tx-3)" }}>{notes.count}</span>
+        ) : null}
       </button>
 
       <button
