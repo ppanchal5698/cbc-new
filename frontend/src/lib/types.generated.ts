@@ -419,6 +419,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/documents/{id}/reprocess/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read this document again (§4.3 Tier 5)
+         * @description Re-runs the pipeline over a document already in the system. The reason an estimator asks is usually that triage skipped a page that mattered, or that a routing change should now read it differently — Risk R12 in practice.
+         *
+         *     Existing pipeline jobs are cleared so the run starts fresh. Without that the OCR stage finds a completed job for its idempotency key and resumes the old Textract result, which is the correct behaviour on a redelivery and exactly the wrong one here.
+         */
+        post: operations["documents_reprocess_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/extraction-metrics/": {
         parameters: {
             query?: never;
@@ -857,6 +879,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/notes/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Calls and notes against a bid.
+         *
+         *     Newest first: the last thing said is the thing an estimator is looking for.
+         */
+        get: operations["notes_list"];
+        put?: never;
+        /**
+         * @description Calls and notes against a bid.
+         *
+         *     Newest first: the last thing said is the thing an estimator is looking for.
+         */
+        post: operations["notes_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/notes/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Calls and notes against a bid.
+         *
+         *     Newest first: the last thing said is the thing an estimator is looking for.
+         */
+        get: operations["notes_retrieve"];
+        /**
+         * @description Calls and notes against a bid.
+         *
+         *     Newest first: the last thing said is the thing an estimator is looking for.
+         */
+        put: operations["notes_update"];
+        post?: never;
+        /**
+         * @description Calls and notes against a bid.
+         *
+         *     Newest first: the last thing said is the thing an estimator is looking for.
+         */
+        delete: operations["notes_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description Calls and notes against a bid.
+         *
+         *     Newest first: the last thing said is the thing an estimator is looking for.
+         */
+        patch: operations["notes_partial_update"];
+        trace?: never;
+    };
     "/api/openings/": {
         parameters: {
             query?: never;
@@ -865,15 +949,42 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description The openings grid (FR-2, FR-8).
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
          *
-         *     ``prefetch_related("provenance")`` plus the grid serializer keeps this to two
-         *     queries regardless of opening count. The citation join is deliberately not
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
          *     traversed here (bottleneck B12).
          */
         get: operations["openings_list"];
         put?: never;
-        post?: never;
+        /**
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
+         *
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
+         *     traversed here (bottleneck B12).
+         */
+        post: operations["openings_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -888,15 +999,136 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description The openings grid (FR-2, FR-8).
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
          *
-         *     ``prefetch_related("provenance")`` plus the grid serializer keeps this to two
-         *     queries regardless of opening count. The citation join is deliberately not
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
          *     traversed here (bottleneck B12).
          */
         get: operations["openings_retrieve"];
-        put?: never;
+        /**
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
+         *
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
+         *     traversed here (bottleneck B12).
+         */
+        put: operations["openings_update"];
         post?: never;
+        /**
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
+         *
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
+         *     traversed here (bottleneck B12).
+         */
+        delete: operations["openings_destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
+         *
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
+         *     traversed here (bottleneck B12).
+         */
+        patch: operations["openings_partial_update"];
+        trace?: never;
+    };
+    "/api/openings/{id}/confirm/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm one item (FR-9)
+         * @description Marks it read cleanly. The estimator has looked and is content.
+         */
+        post: operations["openings_confirm_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/openings/{id}/keep-both/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a duplicate by keeping both readings
+         * @description They looked alike but are two real items. Both get priced.
+         */
+        post: operations["openings_keep_both_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/openings/{id}/keep-one/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve a duplicate by keeping this reading
+         * @description Drops the other reading of the same physical item and clears the flag on this one. The estimator has decided which document to price from.
+         */
+        post: operations["openings_keep_one_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -912,10 +1144,20 @@ export interface paths {
         };
         /**
          * Ranked matches for an opening (FR-4)
-         * @description The openings grid (FR-2, FR-8).
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
          *
-         *     ``prefetch_related("provenance")`` plus the grid serializer keeps this to two
-         *     queries regardless of opening count. The citation join is deliberately not
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
          *     traversed here (bottleneck B12).
          */
         get: operations["openings_matches_list"];
@@ -941,6 +1183,108 @@ export interface paths {
         get: operations["openings_needs_review_list"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/openings/bulk-confirm/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a picked set of items
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
+         *
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
+         *     traversed here (bottleneck B12).
+         */
+        post: operations["openings_bulk_confirm_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/openings/bulk-remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove a picked set of items
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
+         *
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
+         *     traversed here (bottleneck B12).
+         */
+        post: operations["openings_bulk_remove_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/openings/confirm-all/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm every item on a bid still needing a look
+         * @description The line-item ledger (FR-2, FR-8, FR-9).
+         *
+         *     Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+         *     set corrects marks, quantities and descriptions in place, adds the items the
+         *     drawings never carried, and drops the ones that were read twice — and §1.6
+         *     phase 5 is explicit that this judgment is the job rather than an exception to
+         *     it.
+         *
+         *     **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+         *     the audit trail and the tuning dataset, and an edit that skipped it would be a
+         *     correction the extraction never learns from.
+         *
+         *     ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+         *     queries regardless of item count. The citation join is deliberately not
+         *     traversed here (bottleneck B12).
+         */
+        post: operations["openings_confirm_all_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1626,6 +1970,7 @@ export interface components {
             is_active?: boolean;
             /** @description NULLABLE ON PURPOSE (Risk R3): P21 item IDs diverge from manufacturer part numbers and semi-custom items will not match cleanly. The system never auto-accepts a cost match on part-number similarity alone. */
             p21_item_id?: string | null;
+            readonly cross_references: components["schemas"]["CatalogItemXref"][];
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
@@ -1677,6 +2022,22 @@ export interface components {
             is_active?: boolean;
             /** @description NULLABLE ON PURPOSE (Risk R3): P21 item IDs diverge from manufacturer part numbers and semi-custom items will not match cleanly. The system never auto-accepts a cost match on part-number similarity alone. */
             p21_item_id?: string | null;
+        };
+        CatalogItemXref: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            catalog_item: string;
+            /** @description e.g. 'ASI', 'Bradley'. */
+            brand: string;
+            part_number: string;
+        };
+        CatalogItemXrefRequest: {
+            /** Format: uuid */
+            catalog_item: string;
+            /** @description e.g. 'ASI', 'Bradley'. */
+            brand: string;
+            part_number: string;
         };
         /**
          * @description Requires the current password.
@@ -2212,6 +2573,13 @@ export interface components {
             readonly updated_at: string;
         };
         /**
+         * @description * `GC_CALL` - GC_CALL
+         *     * `ARCHITECT_CALL` - ARCHITECT_CALL
+         *     * `INTERNAL` - INTERNAL
+         * @enum {string}
+         */
+        KindEnum: "GC_CALL" | "ARCHITECT_CALL" | "INTERNAL";
+        /**
          * @description * `DOOR` - DOOR
          *     * `RESTROOM_ACCESSORIES` - RESTROOM_ACCESSORIES
          *     * `FREIGHT` - FREIGHT
@@ -2320,6 +2688,41 @@ export interface components {
          * @enum {string}
          */
         MatchStatusEnum: "PROPOSED" | "ACCEPTED" | "REJECTED" | "MANUAL" | "AWAITING_RFQ";
+        Note: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            project: string;
+            kind?: components["schemas"]["KindEnum"];
+            /** @description Who was on the call. */
+            who?: string;
+            /** @description Their company. */
+            org?: string;
+            /** @description What was said. The whole point of the row. */
+            body: string;
+            ref?: string;
+            readonly created_by: number | null;
+            /** @default  */
+            readonly created_by_name: string;
+            /** @description `RG` for the avatar chip beside each note. */
+            readonly created_by_initials: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        NoteRequest: {
+            /** Format: uuid */
+            project: string;
+            kind?: components["schemas"]["KindEnum"];
+            /** @description Who was on the call. */
+            who?: string;
+            /** @description Their company. */
+            org?: string;
+            /** @description What was said. The whole point of the row. */
+            body: string;
+            ref?: string;
+        };
         /** @enum {unknown} */
         NullEnum: null;
         /**
@@ -2342,13 +2745,53 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             /** Format: uuid */
-            readonly project: string;
-            /** Format: uuid */
-            readonly extraction_run: string;
-            /** @description The key everything hangs off. */
-            readonly door_number: string;
+            project: string;
+            /**
+             * Format: uuid
+             * @description Null for an item an estimator typed in. Attributing a hand-written line to a model run would claim a provenance it does not have, which is the same class of untruth §5.6 rejects a fabricated citation for.
+             */
+            readonly extraction_run: string | null;
+            /** @description The mark, where the item has one. Null for a grab bar or a mirror. */
+            door_number?: string | null;
+            /** @description The item as printed on the sheet. The ledger's widest column. */
+            description?: string;
+            /** @description Full CSI section, e.g. '08 11 00' or '10 28 00'. The quote groups by this. */
+            csi_division?: string;
+            /**
+             * Format: decimal
+             * @description How many the document says. Distinct from the quote line's quantity, which an estimator may change without altering what was read.
+             */
+            quantity?: string | null;
+            /**
+             * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+             *
+             *     * `EXTRACTED` - EXTRACTED
+             *     * `REVIEW` - REVIEW
+             *     * `DUPLICATE` - DUPLICATE
+             *     * `MANUAL` - MANUAL
+             */
+            source_kind?: components["schemas"]["SourceKindEnum"];
+            /**
+             * @description Sheet number, e.g. 'A-601'.
+             * @default
+             */
+            readonly sheet_label: string;
+            /**
+             * @description Where on the sheet, e.g. 'Row 4'.
+             * @default
+             */
+            readonly cell_label: string;
+            /** @description The line as it will print on the proposal, before pricing. */
+            quote_text?: string;
+            /**
+             * Format: uuid
+             * @description The other reading of the same physical item — most often a base schedule row and the addendum that reissued it. Both rows are kept until an estimator says which to price: dropping one automatically would decide a question the documents genuinely leave open.
+             */
+            readonly duplicate_of: string | null;
+            /** @description Why these two look like the same item. */
+            readonly duplicate_note: string;
             /** @description As written, e.g. '3070'. */
-            readonly size_raw: string | null;
+            size_raw?: string | null;
             readonly width_inches: number | null;
             readonly height_inches: number | null;
             readonly handing: (components["schemas"]["HandingEnum"] | components["schemas"]["NullEnum"]) | null;
@@ -2378,7 +2821,7 @@ export interface components {
              */
             readonly fire_rating_source_location: components["schemas"]["FireRatingSourceLocationEnum"];
             /** @description 'HW-3', or an explicit manufacturer part/series callout — both are normal (§1.3). */
-            readonly hardware_group: string | null;
+            hardware_group?: string | null;
             /** @description Free text as written. */
             readonly alternate_designation: string | null;
             /**
@@ -2396,6 +2839,46 @@ export interface components {
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
+        };
+        /**
+         * @description One opening with its per-field provenance, grid-shaped.
+         *
+         *     ``fire_rating_absent`` and ``handing_absent`` are surfaced explicitly. FR-8
+         *     requires flagging *missing* ratings, and a null cannot distinguish "absent",
+         *     "not yet extracted", and "extraction rejected" — three states the estimator
+         *     must be able to tell apart.
+         */
+        OpeningRequest: {
+            /** Format: uuid */
+            project: string;
+            /** @description The mark, where the item has one. Null for a grab bar or a mirror. */
+            door_number?: string | null;
+            /** @description The item as printed on the sheet. The ledger's widest column. */
+            description?: string;
+            /** @description Full CSI section, e.g. '08 11 00' or '10 28 00'. The quote groups by this. */
+            csi_division?: string;
+            /**
+             * Format: decimal
+             * @description How many the document says. Distinct from the quote line's quantity, which an estimator may change without altering what was read.
+             */
+            quantity?: string | null;
+            /**
+             * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+             *
+             *     * `EXTRACTED` - EXTRACTED
+             *     * `REVIEW` - REVIEW
+             *     * `DUPLICATE` - DUPLICATE
+             *     * `MANUAL` - MANUAL
+             */
+            source_kind?: components["schemas"]["SourceKindEnum"];
+            /** @description The line as it will print on the proposal, before pricing. */
+            quote_text?: string;
+            /** @description As written, e.g. '3070'. */
+            size_raw?: string | null;
+            /** @description 'HW-3', or an explicit manufacturer part/series callout — both are normal (§1.3). */
+            hardware_group?: string | null;
+            review_state?: components["schemas"]["ReviewStateEnum"];
+            review_notes?: string;
         };
         /**
          * @description * `WON` - WON
@@ -2632,6 +3115,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["Match"][];
+        };
+        PaginatedNoteList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Note"][];
         };
         PaginatedOpeningList: {
             /** @example 123 */
@@ -2896,6 +3394,58 @@ export interface components {
             /** Format: date */
             effective_date?: string;
         };
+        PatchedNoteRequest: {
+            /** Format: uuid */
+            project?: string;
+            kind?: components["schemas"]["KindEnum"];
+            /** @description Who was on the call. */
+            who?: string;
+            /** @description Their company. */
+            org?: string;
+            /** @description What was said. The whole point of the row. */
+            body?: string;
+            ref?: string;
+        };
+        /**
+         * @description One opening with its per-field provenance, grid-shaped.
+         *
+         *     ``fire_rating_absent`` and ``handing_absent`` are surfaced explicitly. FR-8
+         *     requires flagging *missing* ratings, and a null cannot distinguish "absent",
+         *     "not yet extracted", and "extraction rejected" — three states the estimator
+         *     must be able to tell apart.
+         */
+        PatchedOpeningRequest: {
+            /** Format: uuid */
+            project?: string;
+            /** @description The mark, where the item has one. Null for a grab bar or a mirror. */
+            door_number?: string | null;
+            /** @description The item as printed on the sheet. The ledger's widest column. */
+            description?: string;
+            /** @description Full CSI section, e.g. '08 11 00' or '10 28 00'. The quote groups by this. */
+            csi_division?: string;
+            /**
+             * Format: decimal
+             * @description How many the document says. Distinct from the quote line's quantity, which an estimator may change without altering what was read.
+             */
+            quantity?: string | null;
+            /**
+             * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+             *
+             *     * `EXTRACTED` - EXTRACTED
+             *     * `REVIEW` - REVIEW
+             *     * `DUPLICATE` - DUPLICATE
+             *     * `MANUAL` - MANUAL
+             */
+            source_kind?: components["schemas"]["SourceKindEnum"];
+            /** @description The line as it will print on the proposal, before pricing. */
+            quote_text?: string;
+            /** @description As written, e.g. '3070'. */
+            size_raw?: string | null;
+            /** @description 'HW-3', or an explicit manufacturer part/series callout — both are normal (§1.3). */
+            hardware_group?: string | null;
+            review_state?: components["schemas"]["ReviewStateEnum"];
+            review_notes?: string;
+        };
         /**
          * @description The caller's own profile.
          *
@@ -3068,6 +3618,22 @@ export interface components {
             multiplier?: string;
             /** @description Which sheet this came from. Required by NFR-3. */
             source_sheet_version?: string;
+            /** @description The programme as purchasing refers to it, e.g. 'Hager L3 Program'. */
+            sheet_name?: string;
+            /**
+             * Format: date
+             * @description The date CBC's cost is held to. Past it a mid-year list increase reaches the quote, so a lapsed protection is a reason to confirm before a proposal goes out — not merely a stale date.
+             */
+            protected_until?: string | null;
+            /** @description Who owns this sheet. Blank is the honest answer while NFR-10 is open. */
+            steward?: string;
+            /**
+             * Format: date
+             * @description When someone last checked this against the vendor.
+             */
+            reviewed_on?: string | null;
+            /** @description What an estimator should know. */
+            note?: string;
             /** Format: date */
             effective_date?: string;
         };
@@ -3691,6 +4257,14 @@ export interface components {
          */
         SourceChannelEnum: "EMAIL" | "MANUAL" | "PHONE";
         /**
+         * @description * `EXTRACTED` - EXTRACTED
+         *     * `REVIEW` - REVIEW
+         *     * `DUPLICATE` - DUPLICATE
+         *     * `MANUAL` - MANUAL
+         * @enum {string}
+         */
+        SourceKindEnum: "EXTRACTED" | "REVIEW" | "DUPLICATE" | "MANUAL";
+        /**
          * @description What the source viewer needs to draw one highlight.
          *
          *     A CDN URL plus 0-1 polygons. No server-side cropping and no second inference:
@@ -3796,6 +4370,23 @@ export interface components {
             multiplier: string;
             /** @description Which sheet this came from. Required by NFR-3. */
             source_sheet_version?: string;
+            /** @description The programme as purchasing refers to it, e.g. 'Hager L3 Program'. */
+            sheet_name?: string;
+            /**
+             * Format: date
+             * @description The date CBC's cost is held to. Past it a mid-year list increase reaches the quote, so a lapsed protection is a reason to confirm before a proposal goes out — not merely a stale date.
+             */
+            protected_until?: string | null;
+            /** @description Who owns this sheet. Blank is the honest answer while NFR-10 is open. */
+            steward?: string;
+            /**
+             * Format: date
+             * @description When someone last checked this against the vendor.
+             */
+            reviewed_on?: string | null;
+            /** @description What an estimator should know. */
+            note?: string;
+            readonly is_stale: boolean;
             /** Format: date */
             effective_date?: string;
             /** Format: date-time */
@@ -3817,6 +4408,22 @@ export interface components {
             multiplier: string;
             /** @description Which sheet this came from. Required by NFR-3. */
             source_sheet_version?: string;
+            /** @description The programme as purchasing refers to it, e.g. 'Hager L3 Program'. */
+            sheet_name?: string;
+            /**
+             * Format: date
+             * @description The date CBC's cost is held to. Past it a mid-year list increase reaches the quote, so a lapsed protection is a reason to confirm before a proposal goes out — not merely a stale date.
+             */
+            protected_until?: string | null;
+            /** @description Who owns this sheet. Blank is the honest answer while NFR-10 is open. */
+            steward?: string;
+            /**
+             * Format: date
+             * @description When someone last checked this against the vendor.
+             */
+            reviewed_on?: string | null;
+            /** @description What an estimator should know. */
+            note?: string;
             /** Format: date */
             effective_date?: string;
         };
@@ -4708,6 +5315,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedPipelineJobList"];
+                };
+            };
+        };
+    };
+    documents_reprocess_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this document. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
                 };
             };
         };
@@ -5609,10 +6238,170 @@ export interface operations {
             };
         };
     };
+    notes_list: {
+        parameters: {
+            query?: {
+                /**
+                 * @description * `GC_CALL` - GC_CALL
+                 *     * `ARCHITECT_CALL` - ARCHITECT_CALL
+                 *     * `INTERNAL` - INTERNAL
+                 */
+                kind?: "ARCHITECT_CALL" | "GC_CALL" | "INTERNAL";
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                project?: string;
+                /** @description A search term. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedNoteList"];
+                };
+            };
+        };
+    };
+    notes_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["NoteRequest"];
+                "multipart/form-data": components["schemas"]["NoteRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Note"];
+                };
+            };
+        };
+    };
+    notes_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this note. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Note"];
+                };
+            };
+        };
+    };
+    notes_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this note. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["NoteRequest"];
+                "multipart/form-data": components["schemas"]["NoteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Note"];
+                };
+            };
+        };
+    };
+    notes_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this note. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    notes_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this note. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedNoteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedNoteRequest"];
+                "multipart/form-data": components["schemas"]["PatchedNoteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Note"];
+                };
+            };
+        };
+    };
     openings_list: {
         parameters: {
             query?: {
                 bid_alternate?: string;
+                csi_division?: string;
                 extraction_run?: string;
                 fire_rating_absent?: boolean;
                 fire_rating_minutes?: number;
@@ -5642,6 +6431,15 @@ export interface operations {
                 review_state?: "AUTO" | "CONFIRMED" | "CORRECTED" | "FLAGGED" | "REJECTED";
                 /** @description A search term. */
                 search?: string;
+                /**
+                 * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+                 *
+                 *     * `EXTRACTED` - EXTRACTED
+                 *     * `REVIEW` - REVIEW
+                 *     * `DUPLICATE` - DUPLICATE
+                 *     * `MANUAL` - MANUAL
+                 */
+                source_kind?: "DUPLICATE" | "EXTRACTED" | "MANUAL" | "REVIEW";
             };
             header?: never;
             path?: never;
@@ -5655,6 +6453,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedOpeningList"];
+                };
+            };
+        };
+    };
+    openings_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OpeningRequest"];
+                "multipart/form-data": components["schemas"]["OpeningRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opening"];
                 };
             };
         };
@@ -5681,10 +6504,110 @@ export interface operations {
             };
         };
     };
-    openings_matches_list: {
+    openings_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this opening. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OpeningRequest"];
+                "multipart/form-data": components["schemas"]["OpeningRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opening"];
+                };
+            };
+        };
+    };
+    openings_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this opening. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openings_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this opening. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedOpeningRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedOpeningRequest"];
+                "multipart/form-data": components["schemas"]["PatchedOpeningRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opening"];
+                };
+            };
+        };
+    };
+    openings_confirm_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this opening. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opening"];
+                };
+            };
+        };
+    };
+    openings_keep_both_create: {
         parameters: {
             query?: {
                 bid_alternate?: string;
+                csi_division?: string;
                 extraction_run?: string;
                 fire_rating_absent?: boolean;
                 fire_rating_minutes?: number;
@@ -5714,6 +6637,100 @@ export interface operations {
                 review_state?: "AUTO" | "CONFIRMED" | "CORRECTED" | "FLAGGED" | "REJECTED";
                 /** @description A search term. */
                 search?: string;
+                /**
+                 * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+                 *
+                 *     * `EXTRACTED` - EXTRACTED
+                 *     * `REVIEW` - REVIEW
+                 *     * `DUPLICATE` - DUPLICATE
+                 *     * `MANUAL` - MANUAL
+                 */
+                source_kind?: "DUPLICATE" | "EXTRACTED" | "MANUAL" | "REVIEW";
+            };
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this opening. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedOpeningList"];
+                };
+            };
+        };
+    };
+    openings_keep_one_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this opening. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opening"];
+                };
+            };
+        };
+    };
+    openings_matches_list: {
+        parameters: {
+            query?: {
+                bid_alternate?: string;
+                csi_division?: string;
+                extraction_run?: string;
+                fire_rating_absent?: boolean;
+                fire_rating_minutes?: number;
+                /**
+                 * @description * `LH` - LH
+                 *     * `RH` - RH
+                 *     * `LHR` - LHR
+                 *     * `RHR` - RHR
+                 */
+                handing?: "LH" | "LHR" | "RH" | "RHR" | null;
+                handing_absent?: boolean;
+                hardware_group?: string;
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                project?: string;
+                /**
+                 * @description * `AUTO` - AUTO
+                 *     * `FLAGGED` - FLAGGED
+                 *     * `CONFIRMED` - CONFIRMED
+                 *     * `CORRECTED` - CORRECTED
+                 *     * `REJECTED` - REJECTED
+                 */
+                review_state?: "AUTO" | "CONFIRMED" | "CORRECTED" | "FLAGGED" | "REJECTED";
+                /** @description A search term. */
+                search?: string;
+                /**
+                 * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+                 *
+                 *     * `EXTRACTED` - EXTRACTED
+                 *     * `REVIEW` - REVIEW
+                 *     * `DUPLICATE` - DUPLICATE
+                 *     * `MANUAL` - MANUAL
+                 */
+                source_kind?: "DUPLICATE" | "EXTRACTED" | "MANUAL" | "REVIEW";
             };
             header?: never;
             path: {
@@ -5738,6 +6755,7 @@ export interface operations {
         parameters: {
             query?: {
                 bid_alternate?: string;
+                csi_division?: string;
                 extraction_run?: string;
                 fire_rating_absent?: boolean;
                 fire_rating_minutes?: number;
@@ -5767,6 +6785,15 @@ export interface operations {
                 review_state?: "AUTO" | "CONFIRMED" | "CORRECTED" | "FLAGGED" | "REJECTED";
                 /** @description A search term. */
                 search?: string;
+                /**
+                 * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+                 *
+                 *     * `EXTRACTED` - EXTRACTED
+                 *     * `REVIEW` - REVIEW
+                 *     * `DUPLICATE` - DUPLICATE
+                 *     * `MANUAL` - MANUAL
+                 */
+                source_kind?: "DUPLICATE" | "EXTRACTED" | "MANUAL" | "REVIEW";
             };
             header?: never;
             path: {
@@ -5783,6 +6810,144 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedFieldProvenanceGridList"];
+                };
+            };
+        };
+    };
+    openings_bulk_confirm_create: {
+        parameters: {
+            query?: {
+                bid_alternate?: string;
+                csi_division?: string;
+                extraction_run?: string;
+                fire_rating_absent?: boolean;
+                fire_rating_minutes?: number;
+                /**
+                 * @description * `LH` - LH
+                 *     * `RH` - RH
+                 *     * `LHR` - LHR
+                 *     * `RHR` - RHR
+                 */
+                handing?: "LH" | "LHR" | "RH" | "RHR" | null;
+                handing_absent?: boolean;
+                hardware_group?: string;
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                project?: string;
+                /**
+                 * @description * `AUTO` - AUTO
+                 *     * `FLAGGED` - FLAGGED
+                 *     * `CONFIRMED` - CONFIRMED
+                 *     * `CORRECTED` - CORRECTED
+                 *     * `REJECTED` - REJECTED
+                 */
+                review_state?: "AUTO" | "CONFIRMED" | "CORRECTED" | "FLAGGED" | "REJECTED";
+                /** @description A search term. */
+                search?: string;
+                /**
+                 * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+                 *
+                 *     * `EXTRACTED` - EXTRACTED
+                 *     * `REVIEW` - REVIEW
+                 *     * `DUPLICATE` - DUPLICATE
+                 *     * `MANUAL` - MANUAL
+                 */
+                source_kind?: "DUPLICATE" | "EXTRACTED" | "MANUAL" | "REVIEW";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedOpeningList"];
+                };
+            };
+        };
+    };
+    openings_bulk_remove_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    openings_confirm_all_create: {
+        parameters: {
+            query?: {
+                bid_alternate?: string;
+                csi_division?: string;
+                extraction_run?: string;
+                fire_rating_absent?: boolean;
+                fire_rating_minutes?: number;
+                /**
+                 * @description * `LH` - LH
+                 *     * `RH` - RH
+                 *     * `LHR` - LHR
+                 *     * `RHR` - RHR
+                 */
+                handing?: "LH" | "LHR" | "RH" | "RHR" | null;
+                handing_absent?: boolean;
+                hardware_group?: string;
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                project?: string;
+                /**
+                 * @description * `AUTO` - AUTO
+                 *     * `FLAGGED` - FLAGGED
+                 *     * `CONFIRMED` - CONFIRMED
+                 *     * `CORRECTED` - CORRECTED
+                 *     * `REJECTED` - REJECTED
+                 */
+                review_state?: "AUTO" | "CONFIRMED" | "CORRECTED" | "FLAGGED" | "REJECTED";
+                /** @description A search term. */
+                search?: string;
+                /**
+                 * @description How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+                 *
+                 *     * `EXTRACTED` - EXTRACTED
+                 *     * `REVIEW` - REVIEW
+                 *     * `DUPLICATE` - DUPLICATE
+                 *     * `MANUAL` - MANUAL
+                 */
+                source_kind?: "DUPLICATE" | "EXTRACTED" | "MANUAL" | "REVIEW";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedOpeningList"];
                 };
             };
         };

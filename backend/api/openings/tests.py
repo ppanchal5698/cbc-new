@@ -23,6 +23,7 @@ from factories import (
 )
 from rest_framework import status
 
+from openings.models import Opening
 from shared.enums import ReviewState
 
 pytestmark = pytest.mark.django_db
@@ -111,10 +112,49 @@ class TestOpeningsGrid:
         body = auth_client.get(f"/api/openings/{opening.id}/needs-review/").data
         assert [f["field_name"] for f in body] == ["fire_rating"]
 
-    def test_openings_are_read_only_through_the_api(self, auth_client):
-        """Values arrive from extraction and are corrected through provenance."""
-        response = auth_client.post("/api/openings/", {"door_number": "999"}, format="json")
-        assert response.status_code == status.HTTP_405_METHOD_NOT_ALLOWED
+    def test_an_item_added_by_hand_says_so(self, auth_client):
+        """
+        The ledger is writable — §1.6 phase 5 puts judgment in the estimator's
+        hands and a bid set never carries everything.
+
+        What it must not do is let a hand-written line pass for an extracted one.
+        It is marked MANUAL and carries no extraction run, because attributing it
+        to a model run would claim a provenance it does not have.
+        """
+        project = ProjectFactory()
+        response = auth_client.post(
+            "/api/openings/",
+            {"project": str(project.id), "description": "Ladder, 8 ft", "quantity": "1"},
+            format="json",
+        )
+        assert response.status_code == status.HTTP_201_CREATED
+        assert response.data["source_kind"] == "MANUAL"
+        assert response.data["extraction_run"] is None
+        assert response.data["sheet_label"] == "Added by hand"
+
+    def test_every_edit_writes_exactly_one_feedback_row(self, auth_client):
+        """FR-13: the tuning dataset, and double-counting it would skew the tuning."""
+        from feedback.models import Feedback
+
+        opening = OpeningFactory(door_number="101", description="HM flush door")
+        auth_client.patch(
+            f"/api/openings/{opening.id}/",
+            {"description": "HM flush door, 18ga galv"},
+            format="json",
+        )
+        rows = Feedback.objects.filter(entity_id=opening.id, field_name="description")
+        assert rows.count() == 1
+        assert rows.first().value_after == "HM flush door, 18ga galv"
+
+    def test_an_unchanged_field_writes_nothing(self, auth_client):
+        """A save that changed nothing is not a correction to learn from."""
+        from feedback.models import Feedback
+
+        opening = OpeningFactory(door_number="101", description="HM flush door")
+        auth_client.patch(
+            f"/api/openings/{opening.id}/", {"description": "HM flush door"}, format="json"
+        )
+        assert not Feedback.objects.filter(entity_id=opening.id).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -323,3 +363,110 @@ class TestMatches:
         MatchFactory(opening=opening, rank=1, match_confidence=0.9)
         body = auth_client.get(f"/api/openings/{opening.id}/matches/").data
         assert [m["rank"] for m in body] == [1, 2]
+
+
+# ---------------------------------------------------------------------------
+# Duplicates — the same physical item read from two documents
+# ---------------------------------------------------------------------------
+
+class TestDuplicateResolution:
+    """
+    An addendum reissues a schedule row and the base row is still in the list;
+    a restroom plan repeats six grab bars the fixture schedule already counted.
+
+    Both readings are real, and which one to price is a question the documents
+    genuinely leave open — so the system keeps both and asks. Choosing for the
+    estimator would be inventing an answer, and quietly dropping one would lose
+    an item nobody knew was missing.
+    """
+
+    @pytest.fixture
+    def pair(self):
+        project = ProjectFactory()
+        run = ExtractionRunFactory()
+        base = OpeningFactory(
+            project=project, extraction_run=run, door_number="102",
+            description="HM door pair, mortise prep", sheet_label="A-601", cell_label="Row 5",
+            source_kind="DUPLICATE",
+        )
+        reissue = OpeningFactory(
+            project=project, extraction_run=run, door_number="102",
+            description="HM door pair, mortise prep", sheet_label="Addendum 1", cell_label="Row 2",
+            source_kind="DUPLICATE", duplicate_of=base,
+            duplicate_note="Reissued in addendum 1",
+        )
+        return base, reissue
+
+    def test_both_readings_of_one_mark_can_coexist(self, pair):
+        """
+        The unique constraint is keyed on where a row was read, not on its mark.
+        Keying on the mark alone would make the database refuse to record the very
+        thing the ledger exists to surface.
+        """
+        base, reissue = pair
+        assert Opening.objects.filter(door_number="102").count() == 2
+
+    def test_keep_one_drops_the_other_and_clears_the_flag(self, auth_client, pair):
+        base, reissue = pair
+        response = auth_client.post(f"/api/openings/{reissue.id}/keep-one/")
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["source_kind"] == "EXTRACTED"
+        assert response.data["duplicate_of"] is None
+        assert not Opening.objects.filter(id=base.id).exists()
+        assert Opening.objects.filter(id=reissue.id).exists()
+
+    def test_keep_both_keeps_two_priceable_items(self, auth_client, pair):
+        base, reissue = pair
+        response = auth_client.post(f"/api/openings/{reissue.id}/keep-both/")
+        assert response.status_code == status.HTTP_200_OK
+        assert Opening.objects.filter(door_number="102").count() == 2
+        for row in Opening.objects.filter(door_number="102"):
+            assert row.source_kind == "EXTRACTED"
+            assert row.duplicate_of is None
+
+    def test_resolving_is_recorded(self, auth_client, pair):
+        """Which reading an estimator chose is the answer to a question the documents posed."""
+        from feedback.models import Feedback
+
+        _, reissue = pair
+        auth_client.post(f"/api/openings/{reissue.id}/keep-one/")
+        assert Feedback.objects.filter(
+            entity_id=reissue.id, field_name="__duplicate_resolved__"
+        ).exists()
+
+    def test_an_item_cannot_be_its_own_duplicate(self):
+        """Enforced in the database, because a self-referencing pair loops forever."""
+        from django.db import IntegrityError, transaction
+
+        opening = OpeningFactory()
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Opening.objects.filter(id=opening.id).update(duplicate_of=opening.id)
+
+
+class TestBulkTriage:
+    def test_confirm_all_clears_only_the_ones_needing_a_look(self, auth_client):
+        project = ProjectFactory()
+        needs = OpeningFactory(project=project, source_kind="REVIEW")
+        manual = OpeningFactory(project=project, source_kind="MANUAL")
+        auth_client.post("/api/openings/confirm-all/", {"project": str(project.id)}, format="json")
+        needs.refresh_from_db()
+        manual.refresh_from_db()
+        assert needs.source_kind == "EXTRACTED"
+        assert manual.source_kind == "MANUAL", "a hand-written line was never in question"
+
+    def test_bulk_confirm_takes_the_picked_set(self, auth_client):
+        a = OpeningFactory(source_kind="REVIEW")
+        b = OpeningFactory(source_kind="REVIEW")
+        auth_client.post("/api/openings/bulk-confirm/", {"ids": [str(a.id)]}, format="json")
+        a.refresh_from_db()
+        b.refresh_from_db()
+        assert a.source_kind == "EXTRACTED"
+        assert b.source_kind == "REVIEW"
+
+    def test_bulk_remove_deletes_and_records(self, auth_client):
+        from feedback.models import Feedback
+
+        opening = OpeningFactory()
+        auth_client.post("/api/openings/bulk-remove/", {"ids": [str(opening.id)]}, format="json")
+        assert not Opening.objects.filter(id=opening.id).exists()
+        assert Feedback.objects.filter(entity_id=opening.id, field_name="__deleted__").exists()

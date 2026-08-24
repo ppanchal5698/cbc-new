@@ -48,6 +48,12 @@ PROTECTED_ENDPOINTS = [
     "/api/vendor-rfqs/",
     "/api/feedback/",
     "/api/extraction-metrics/",
+    # Calls and notes carry what a GC or architect said about a live bid.
+    "/api/notes/",
+    # Ledger actions that operate on a whole bid rather than one row.
+    "/api/openings/bulk-confirm/",
+    "/api/openings/bulk-remove/",
+    "/api/openings/confirm-all/",
     # Authenticated auth routes. Signing in is public; everything you do once
     # signed in is not.
     "/api/auth/logout/",
@@ -65,10 +71,14 @@ PROTECTED_ENDPOINTS = [
 DETAIL_ACTION_ENDPOINTS = [
     "/api/projects/{id}/documents/",
     "/api/documents/{id}/manifest/",
+    "/api/documents/{id}/reprocess/",
     "/api/documents/{id}/page-diffs/",
     "/api/documents/{id}/pipeline-jobs/",
     "/api/manifest/{id}/force-read/",
     "/api/openings/{id}/matches/",
+    "/api/openings/{id}/confirm/",
+    "/api/openings/{id}/keep-one/",
+    "/api/openings/{id}/keep-both/",
     "/api/openings/{id}/needs-review/",
     "/api/matches/{id}/accept/",
     "/api/matches/{id}/reject/",

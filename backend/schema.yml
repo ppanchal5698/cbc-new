@@ -1208,6 +1208,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedPipelineJobList'
           description: ''
+  /api/documents/{id}/reprocess/:
+    post:
+      operationId: documents_reprocess_create
+      description: |-
+        Re-runs the pipeline over a document already in the system. The reason an estimator asks is usually that triage skipped a page that mattered, or that a routing change should now read it differently — Risk R12 in practice.
+
+        Existing pipeline jobs are cleared so the run starts fresh. Without that the OCR stage finds a completed job for its idempotency key and resumes the old Textract result, which is the correct behaviour on a redelivery and exactly the wrong one here.
+      summary: Read this document again (§4.3 Tier 5)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this document.
+        required: true
+      tags:
+      - documents
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+          description: ''
   /api/extraction-metrics/:
     get:
       operationId: extraction_metrics_list
@@ -2470,14 +2498,239 @@ paths:
               schema:
                 $ref: '#/components/schemas/Match'
           description: ''
+  /api/notes/:
+    get:
+      operationId: notes_list
+      description: |-
+        Calls and notes against a bid.
+
+        Newest first: the last thing said is the thing an estimator is looking for.
+      parameters:
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - ARCHITECT_CALL
+          - GC_CALL
+          - INTERNAL
+        description: |-
+          * `GC_CALL` - GC_CALL
+          * `ARCHITECT_CALL` - ARCHITECT_CALL
+          * `INTERNAL` - INTERNAL
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: project
+        schema:
+          type: string
+          format: uuid
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - notes
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNoteList'
+          description: ''
+    post:
+      operationId: notes_create
+      description: |-
+        Calls and notes against a bid.
+
+        Newest first: the last thing said is the thing an estimator is looking for.
+      tags:
+      - notes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+          description: ''
+  /api/notes/{id}/:
+    get:
+      operationId: notes_retrieve
+      description: |-
+        Calls and notes against a bid.
+
+        Newest first: the last thing said is the thing an estimator is looking for.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this note.
+        required: true
+      tags:
+      - notes
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+          description: ''
+    put:
+      operationId: notes_update
+      description: |-
+        Calls and notes against a bid.
+
+        Newest first: the last thing said is the thing an estimator is looking for.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this note.
+        required: true
+      tags:
+      - notes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+          description: ''
+    patch:
+      operationId: notes_partial_update
+      description: |-
+        Calls and notes against a bid.
+
+        Newest first: the last thing said is the thing an estimator is looking for.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this note.
+        required: true
+      tags:
+      - notes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedNoteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedNoteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedNoteRequest'
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Note'
+          description: ''
+    delete:
+      operationId: notes_destroy
+      description: |-
+        Calls and notes against a bid.
+
+        Newest first: the last thing said is the thing an estimator is looking for.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this note.
+        required: true
+      tags:
+      - notes
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/openings/:
     get:
       operationId: openings_list
       description: |-
-        The openings grid (FR-2, FR-8).
+        The line-item ledger (FR-2, FR-8, FR-9).
 
-        ``prefetch_related("provenance")`` plus the grid serializer keeps this to two
-        queries regardless of opening count. The citation join is deliberately not
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
         traversed here (bottleneck B12).
       parameters:
       - in: query
@@ -2485,6 +2738,10 @@ paths:
         schema:
           type: string
           format: uuid
+      - in: query
+        name: csi_division
+        schema:
+          type: string
       - in: query
         name: extraction_run
         schema:
@@ -2566,6 +2823,22 @@ paths:
         description: A search term.
         schema:
           type: string
+      - in: query
+        name: source_kind
+        schema:
+          type: string
+          enum:
+          - DUPLICATE
+          - EXTRACTED
+          - MANUAL
+          - REVIEW
+        description: |-
+          How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+          * `EXTRACTED` - EXTRACTED
+          * `REVIEW` - REVIEW
+          * `DUPLICATE` - DUPLICATE
+          * `MANUAL` - MANUAL
       tags:
       - openings
       security:
@@ -2578,15 +2851,382 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedOpeningList'
           description: ''
+    post:
+      operationId: openings_create
+      description: |-
+        The line-item ledger (FR-2, FR-8, FR-9).
+
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
+        traversed here (bottleneck B12).
+      tags:
+      - openings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpeningRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpeningRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Opening'
+          description: ''
   /api/openings/{id}/:
     get:
       operationId: openings_retrieve
       description: |-
-        The openings grid (FR-2, FR-8).
+        The line-item ledger (FR-2, FR-8, FR-9).
 
-        ``prefetch_related("provenance")`` plus the grid serializer keeps this to two
-        queries regardless of opening count. The citation join is deliberately not
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
         traversed here (bottleneck B12).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this opening.
+        required: true
+      tags:
+      - openings
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Opening'
+          description: ''
+    put:
+      operationId: openings_update
+      description: |-
+        The line-item ledger (FR-2, FR-8, FR-9).
+
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
+        traversed here (bottleneck B12).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this opening.
+        required: true
+      tags:
+      - openings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpeningRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpeningRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Opening'
+          description: ''
+    patch:
+      operationId: openings_partial_update
+      description: |-
+        The line-item ledger (FR-2, FR-8, FR-9).
+
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
+        traversed here (bottleneck B12).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this opening.
+        required: true
+      tags:
+      - openings
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedOpeningRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedOpeningRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedOpeningRequest'
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Opening'
+          description: ''
+    delete:
+      operationId: openings_destroy
+      description: |-
+        The line-item ledger (FR-2, FR-8, FR-9).
+
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
+        traversed here (bottleneck B12).
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this opening.
+        required: true
+      tags:
+      - openings
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/openings/{id}/confirm/:
+    post:
+      operationId: openings_confirm_create
+      description: Marks it read cleanly. The estimator has looked and is content.
+      summary: Confirm one item (FR-9)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this opening.
+        required: true
+      tags:
+      - openings
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Opening'
+          description: ''
+  /api/openings/{id}/keep-both/:
+    post:
+      operationId: openings_keep_both_create
+      description: They looked alike but are two real items. Both get priced.
+      summary: Resolve a duplicate by keeping both readings
+      parameters:
+      - in: query
+        name: bid_alternate
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: csi_division
+        schema:
+          type: string
+      - in: query
+        name: extraction_run
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: fire_rating_absent
+        schema:
+          type: boolean
+      - in: query
+        name: fire_rating_minutes
+        schema:
+          type: integer
+      - in: query
+        name: handing
+        schema:
+          type: string
+          nullable: true
+          enum:
+          - LH
+          - LHR
+          - RH
+          - RHR
+        description: |-
+          * `LH` - LH
+          * `RH` - RH
+          * `LHR` - LHR
+          * `RHR` - RHR
+      - in: query
+        name: handing_absent
+        schema:
+          type: boolean
+      - in: query
+        name: hardware_group
+        schema:
+          type: string
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this opening.
+        required: true
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: project
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: review_state
+        schema:
+          type: string
+          enum:
+          - AUTO
+          - CONFIRMED
+          - CORRECTED
+          - FLAGGED
+          - REJECTED
+        description: |-
+          * `AUTO` - AUTO
+          * `FLAGGED` - FLAGGED
+          * `CONFIRMED` - CONFIRMED
+          * `CORRECTED` - CORRECTED
+          * `REJECTED` - REJECTED
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: source_kind
+        schema:
+          type: string
+          enum:
+          - DUPLICATE
+          - EXTRACTED
+          - MANUAL
+          - REVIEW
+        description: |-
+          How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+          * `EXTRACTED` - EXTRACTED
+          * `REVIEW` - REVIEW
+          * `DUPLICATE` - DUPLICATE
+          * `MANUAL` - MANUAL
+      tags:
+      - openings
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOpeningList'
+          description: ''
+  /api/openings/{id}/keep-one/:
+    post:
+      operationId: openings_keep_one_create
+      description: Drops the other reading of the same physical item and clears the
+        flag on this one. The estimator has decided which document to price from.
+      summary: Resolve a duplicate by keeping this reading
       parameters:
       - in: path
         name: id
@@ -2611,10 +3251,20 @@ paths:
     get:
       operationId: openings_matches_list
       description: |-
-        The openings grid (FR-2, FR-8).
+        The line-item ledger (FR-2, FR-8, FR-9).
 
-        ``prefetch_related("provenance")`` plus the grid serializer keeps this to two
-        queries regardless of opening count. The citation join is deliberately not
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
         traversed here (bottleneck B12).
       summary: Ranked matches for an opening (FR-4)
       parameters:
@@ -2623,6 +3273,10 @@ paths:
         schema:
           type: string
           format: uuid
+      - in: query
+        name: csi_division
+        schema:
+          type: string
       - in: query
         name: extraction_run
         schema:
@@ -2711,6 +3365,22 @@ paths:
         description: A search term.
         schema:
           type: string
+      - in: query
+        name: source_kind
+        schema:
+          type: string
+          enum:
+          - DUPLICATE
+          - EXTRACTED
+          - MANUAL
+          - REVIEW
+        description: |-
+          How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+          * `EXTRACTED` - EXTRACTED
+          * `REVIEW` - REVIEW
+          * `DUPLICATE` - DUPLICATE
+          * `MANUAL` - MANUAL
       tags:
       - openings
       security:
@@ -2737,6 +3407,10 @@ paths:
           type: string
           format: uuid
       - in: query
+        name: csi_division
+        schema:
+          type: string
+      - in: query
         name: extraction_run
         schema:
           type: string
@@ -2824,6 +3498,22 @@ paths:
         description: A search term.
         schema:
           type: string
+      - in: query
+        name: source_kind
+        schema:
+          type: string
+          enum:
+          - DUPLICATE
+          - EXTRACTED
+          - MANUAL
+          - REVIEW
+        description: |-
+          How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+          * `EXTRACTED` - EXTRACTED
+          * `REVIEW` - REVIEW
+          * `DUPLICATE` - DUPLICATE
+          * `MANUAL` - MANUAL
       tags:
       - openings
       security:
@@ -2835,6 +3525,312 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedFieldProvenanceGridList'
+          description: ''
+  /api/openings/bulk-confirm/:
+    post:
+      operationId: openings_bulk_confirm_create
+      description: |-
+        The line-item ledger (FR-2, FR-8, FR-9).
+
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
+        traversed here (bottleneck B12).
+      summary: Confirm a picked set of items
+      parameters:
+      - in: query
+        name: bid_alternate
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: csi_division
+        schema:
+          type: string
+      - in: query
+        name: extraction_run
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: fire_rating_absent
+        schema:
+          type: boolean
+      - in: query
+        name: fire_rating_minutes
+        schema:
+          type: integer
+      - in: query
+        name: handing
+        schema:
+          type: string
+          nullable: true
+          enum:
+          - LH
+          - LHR
+          - RH
+          - RHR
+        description: |-
+          * `LH` - LH
+          * `RH` - RH
+          * `LHR` - LHR
+          * `RHR` - RHR
+      - in: query
+        name: handing_absent
+        schema:
+          type: boolean
+      - in: query
+        name: hardware_group
+        schema:
+          type: string
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: project
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: review_state
+        schema:
+          type: string
+          enum:
+          - AUTO
+          - CONFIRMED
+          - CORRECTED
+          - FLAGGED
+          - REJECTED
+        description: |-
+          * `AUTO` - AUTO
+          * `FLAGGED` - FLAGGED
+          * `CONFIRMED` - CONFIRMED
+          * `CORRECTED` - CORRECTED
+          * `REJECTED` - REJECTED
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: source_kind
+        schema:
+          type: string
+          enum:
+          - DUPLICATE
+          - EXTRACTED
+          - MANUAL
+          - REVIEW
+        description: |-
+          How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+          * `EXTRACTED` - EXTRACTED
+          * `REVIEW` - REVIEW
+          * `DUPLICATE` - DUPLICATE
+          * `MANUAL` - MANUAL
+      tags:
+      - openings
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOpeningList'
+          description: ''
+  /api/openings/bulk-remove/:
+    post:
+      operationId: openings_bulk_remove_create
+      description: |-
+        The line-item ledger (FR-2, FR-8, FR-9).
+
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
+        traversed here (bottleneck B12).
+      summary: Remove a picked set of items
+      tags:
+      - openings
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/openings/confirm-all/:
+    post:
+      operationId: openings_confirm_all_create
+      description: |-
+        The line-item ledger (FR-2, FR-8, FR-9).
+
+        Writable, unlike the read-only grid it replaces. An estimator triaging a bid
+        set corrects marks, quantities and descriptions in place, adds the items the
+        drawings never carried, and drops the ones that were read twice — and §1.6
+        phase 5 is explicit that this judgment is the job rather than an exception to
+        it.
+
+        **Every mutation writes a feedback row** (FR-13). That table is simultaneously
+        the audit trail and the tuning dataset, and an edit that skipped it would be a
+        correction the extraction never learns from.
+
+        ``prefetch_related("provenance")`` plus the grid serializer keeps reads to two
+        queries regardless of item count. The citation join is deliberately not
+        traversed here (bottleneck B12).
+      summary: Confirm every item on a bid still needing a look
+      parameters:
+      - in: query
+        name: bid_alternate
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: csi_division
+        schema:
+          type: string
+      - in: query
+        name: extraction_run
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: fire_rating_absent
+        schema:
+          type: boolean
+      - in: query
+        name: fire_rating_minutes
+        schema:
+          type: integer
+      - in: query
+        name: handing
+        schema:
+          type: string
+          nullable: true
+          enum:
+          - LH
+          - LHR
+          - RH
+          - RHR
+        description: |-
+          * `LH` - LH
+          * `RH` - RH
+          * `LHR` - LHR
+          * `RHR` - RHR
+      - in: query
+        name: handing_absent
+        schema:
+          type: boolean
+      - in: query
+        name: hardware_group
+        schema:
+          type: string
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: project
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: review_state
+        schema:
+          type: string
+          enum:
+          - AUTO
+          - CONFIRMED
+          - CORRECTED
+          - FLAGGED
+          - REJECTED
+        description: |-
+          * `AUTO` - AUTO
+          * `FLAGGED` - FLAGGED
+          * `CONFIRMED` - CONFIRMED
+          * `CORRECTED` - CORRECTED
+          * `REJECTED` - REJECTED
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      - in: query
+        name: source_kind
+        schema:
+          type: string
+          enum:
+          - DUPLICATE
+          - EXTRACTED
+          - MANUAL
+          - REVIEW
+        description: |-
+          How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+          * `EXTRACTED` - EXTRACTED
+          * `REVIEW` - REVIEW
+          * `DUPLICATE` - DUPLICATE
+          * `MANUAL` - MANUAL
+      tags:
+      - openings
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOpeningList'
           description: ''
   /api/pipeline-jobs/:
     get:
@@ -5032,6 +6028,11 @@ components:
             part numbers and semi-custom items will not match cleanly. The system
             never auto-accepts a cost match on part-number similarity alone.'
           maxLength: 100
+        cross_references:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogItemXref'
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -5042,6 +6043,7 @@ components:
           readOnly: true
       required:
       - created_at
+      - cross_references
       - description
       - finish_bhma_code
       - finish_us_code
@@ -5147,6 +6149,47 @@ components:
       - description
       - sku
       - vendor
+    CatalogItemXref:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        catalog_item:
+          type: string
+          format: uuid
+        brand:
+          type: string
+          description: e.g. 'ASI', 'Bradley'.
+          maxLength: 255
+        part_number:
+          type: string
+          maxLength: 255
+      required:
+      - brand
+      - catalog_item
+      - id
+      - part_number
+    CatalogItemXrefRequest:
+      type: object
+      properties:
+        catalog_item:
+          type: string
+          format: uuid
+        brand:
+          type: string
+          minLength: 1
+          description: e.g. 'ASI', 'Bradley'.
+          maxLength: 255
+        part_number:
+          type: string
+          minLength: 1
+          maxLength: 255
+      required:
+      - brand
+      - catalog_item
+      - part_number
     ChangePasswordRequest:
       type: object
       description: |-
@@ -6326,6 +7369,16 @@ components:
       - quantity_raw
       - resolved
       - updated_at
+    KindEnum:
+      enum:
+      - GC_CALL
+      - ARCHITECT_CALL
+      - INTERNAL
+      type: string
+      description: |-
+        * `GC_CALL` - GC_CALL
+        * `ARCHITECT_CALL` - ARCHITECT_CALL
+        * `INTERNAL` - INTERNAL
     LineGroupEnum:
       enum:
       - DOOR
@@ -6548,6 +7601,87 @@ components:
         * `REJECTED` - REJECTED
         * `MANUAL` - MANUAL
         * `AWAITING_RFQ` - AWAITING_RFQ
+    Note:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        project:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        who:
+          type: string
+          description: Who was on the call.
+          maxLength: 255
+        org:
+          type: string
+          description: Their company.
+          maxLength: 255
+        body:
+          type: string
+          description: What was said. The whole point of the row.
+        ref:
+          type: string
+          maxLength: 255
+        created_by:
+          type: integer
+          readOnly: true
+          nullable: true
+        created_by_name:
+          type: string
+          readOnly: true
+          default: ''
+        created_by_initials:
+          type: string
+          description: '`RG` for the avatar chip beside each note.'
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - body
+      - created_at
+      - created_by
+      - created_by_initials
+      - created_by_name
+      - id
+      - project
+      - updated_at
+    NoteRequest:
+      type: object
+      properties:
+        project:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        who:
+          type: string
+          description: Who was on the call.
+          maxLength: 255
+        org:
+          type: string
+          description: Their company.
+          maxLength: 255
+        body:
+          type: string
+          minLength: 1
+          description: What was said. The whole point of the row.
+        ref:
+          type: string
+          maxLength: 255
+      required:
+      - body
+      - project
     NullEnum:
       enum:
       - null
@@ -6580,20 +7714,76 @@ components:
         project:
           type: string
           format: uuid
-          readOnly: true
         extraction_run:
           type: string
           format: uuid
           readOnly: true
+          nullable: true
+          description: Null for an item an estimator typed in. Attributing a hand-written
+            line to a model run would claim a provenance it does not have, which is
+            the same class of untruth §5.6 rejects a fabricated citation for.
         door_number:
           type: string
-          readOnly: true
-          description: The key everything hangs off.
-        size_raw:
+          nullable: true
+          description: The mark, where the item has one. Null for a grab bar or a
+            mirror.
+          maxLength: 100
+        description:
+          type: string
+          description: The item as printed on the sheet. The ledger's widest column.
+        csi_division:
+          type: string
+          description: Full CSI section, e.g. '08 11 00' or '10 28 00'. The quote
+            groups by this.
+          maxLength: 16
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          nullable: true
+          description: How many the document says. Distinct from the quote line's
+            quantity, which an estimator may change without altering what was read.
+        source_kind:
+          allOf:
+          - $ref: '#/components/schemas/SourceKindEnum'
+          description: |-
+            How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+            * `EXTRACTED` - EXTRACTED
+            * `REVIEW` - REVIEW
+            * `DUPLICATE` - DUPLICATE
+            * `MANUAL` - MANUAL
+        sheet_label:
           type: string
           readOnly: true
+          default: ''
+          description: Sheet number, e.g. 'A-601'.
+        cell_label:
+          type: string
+          readOnly: true
+          default: ''
+          description: Where on the sheet, e.g. 'Row 4'.
+        quote_text:
+          type: string
+          description: The line as it will print on the proposal, before pricing.
+        duplicate_of:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+          description: 'The other reading of the same physical item — most often a
+            base schedule row and the addendum that reissued it. Both rows are kept
+            until an estimator says which to price: dropping one automatically would
+            decide a question the documents genuinely leave open.'
+        duplicate_note:
+          type: string
+          readOnly: true
+          description: Why these two look like the same item.
+        size_raw:
+          type: string
           nullable: true
           description: As written, e.g. '3070'.
+          maxLength: 32
         width_inches:
           type: integer
           readOnly: true
@@ -6657,10 +7847,10 @@ components:
             * `UNKNOWN` - UNKNOWN
         hardware_group:
           type: string
-          readOnly: true
           nullable: true
           description: '''HW-3'', or an explicit manufacturer part/series callout
             — both are normal (§1.3).'
+          maxLength: 100
         alternate_designation:
           type: string
           readOnly: true
@@ -6702,8 +7892,10 @@ components:
       required:
       - alternate_designation
       - bid_alternate
+      - cell_label
       - created_at
-      - door_number
+      - duplicate_note
+      - duplicate_of
       - extraction_run
       - finish_bhma_code
       - finish_code
@@ -6715,16 +7907,79 @@ components:
       - fire_rating_source_location
       - handing
       - handing_absent
-      - hardware_group
       - height_inches
       - id
       - project
       - provenance
-      - size_raw
+      - sheet_label
       - throat_depth
       - updated_at
       - wall_type
       - width_inches
+    OpeningRequest:
+      type: object
+      description: |-
+        One opening with its per-field provenance, grid-shaped.
+
+        ``fire_rating_absent`` and ``handing_absent`` are surfaced explicitly. FR-8
+        requires flagging *missing* ratings, and a null cannot distinguish "absent",
+        "not yet extracted", and "extraction rejected" — three states the estimator
+        must be able to tell apart.
+      properties:
+        project:
+          type: string
+          format: uuid
+        door_number:
+          type: string
+          nullable: true
+          description: The mark, where the item has one. Null for a grab bar or a
+            mirror.
+          maxLength: 100
+        description:
+          type: string
+          description: The item as printed on the sheet. The ledger's widest column.
+        csi_division:
+          type: string
+          description: Full CSI section, e.g. '08 11 00' or '10 28 00'. The quote
+            groups by this.
+          maxLength: 16
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          nullable: true
+          description: How many the document says. Distinct from the quote line's
+            quantity, which an estimator may change without altering what was read.
+        source_kind:
+          allOf:
+          - $ref: '#/components/schemas/SourceKindEnum'
+          description: |-
+            How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+            * `EXTRACTED` - EXTRACTED
+            * `REVIEW` - REVIEW
+            * `DUPLICATE` - DUPLICATE
+            * `MANUAL` - MANUAL
+        quote_text:
+          type: string
+          description: The line as it will print on the proposal, before pricing.
+        size_raw:
+          type: string
+          nullable: true
+          description: As written, e.g. '3070'.
+          maxLength: 32
+        hardware_group:
+          type: string
+          nullable: true
+          description: '''HW-3'', or an explicit manufacturer part/series callout
+            — both are normal (§1.3).'
+          maxLength: 100
+        review_state:
+          $ref: '#/components/schemas/ReviewStateEnum'
+        review_notes:
+          type: string
+      required:
+      - project
     OutcomeEnum:
       enum:
       - WON
@@ -7099,6 +8354,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Match'
+    PaginatedNoteList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
     PaginatedOpeningList:
       type: object
       required:
@@ -7549,6 +8827,91 @@ components:
         effective_date:
           type: string
           format: date
+    PatchedNoteRequest:
+      type: object
+      properties:
+        project:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        who:
+          type: string
+          description: Who was on the call.
+          maxLength: 255
+        org:
+          type: string
+          description: Their company.
+          maxLength: 255
+        body:
+          type: string
+          minLength: 1
+          description: What was said. The whole point of the row.
+        ref:
+          type: string
+          maxLength: 255
+    PatchedOpeningRequest:
+      type: object
+      description: |-
+        One opening with its per-field provenance, grid-shaped.
+
+        ``fire_rating_absent`` and ``handing_absent`` are surfaced explicitly. FR-8
+        requires flagging *missing* ratings, and a null cannot distinguish "absent",
+        "not yet extracted", and "extraction rejected" — three states the estimator
+        must be able to tell apart.
+      properties:
+        project:
+          type: string
+          format: uuid
+        door_number:
+          type: string
+          nullable: true
+          description: The mark, where the item has one. Null for a grab bar or a
+            mirror.
+          maxLength: 100
+        description:
+          type: string
+          description: The item as printed on the sheet. The ledger's widest column.
+        csi_division:
+          type: string
+          description: Full CSI section, e.g. '08 11 00' or '10 28 00'. The quote
+            groups by this.
+          maxLength: 16
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,10}(?:\.\d{0,2})?$
+          nullable: true
+          description: How many the document says. Distinct from the quote line's
+            quantity, which an estimator may change without altering what was read.
+        source_kind:
+          allOf:
+          - $ref: '#/components/schemas/SourceKindEnum'
+          description: |-
+            How the ledger presents this row and which quick action it offers. Distinct from review_state, which is about one field passing the gate.
+
+            * `EXTRACTED` - EXTRACTED
+            * `REVIEW` - REVIEW
+            * `DUPLICATE` - DUPLICATE
+            * `MANUAL` - MANUAL
+        quote_text:
+          type: string
+          description: The line as it will print on the proposal, before pricing.
+        size_raw:
+          type: string
+          nullable: true
+          description: As written, e.g. '3070'.
+          maxLength: 32
+        hardware_group:
+          type: string
+          nullable: true
+          description: '''HW-3'', or an explicit manufacturer part/series callout
+            — both are normal (§1.3).'
+          maxLength: 100
+        review_state:
+          $ref: '#/components/schemas/ReviewStateEnum'
+        review_notes:
+          type: string
     PatchedProfileRequest:
       type: object
       description: |-
@@ -7822,6 +9185,30 @@ components:
           type: string
           description: Which sheet this came from. Required by NFR-3.
           maxLength: 255
+        sheet_name:
+          type: string
+          description: The programme as purchasing refers to it, e.g. 'Hager L3 Program'.
+          maxLength: 255
+        protected_until:
+          type: string
+          format: date
+          nullable: true
+          description: The date CBC's cost is held to. Past it a mid-year list increase
+            reaches the quote, so a lapsed protection is a reason to confirm before
+            a proposal goes out — not merely a stale date.
+        steward:
+          type: string
+          description: Who owns this sheet. Blank is the honest answer while NFR-10
+            is open.
+          maxLength: 255
+        reviewed_on:
+          type: string
+          format: date
+          nullable: true
+          description: When someone last checked this against the vendor.
+        note:
+          type: string
+          description: What an estimator should know.
         effective_date:
           type: string
           format: date
@@ -8942,6 +10329,18 @@ components:
         * `EMAIL` - EMAIL
         * `MANUAL` - MANUAL
         * `PHONE` - PHONE
+    SourceKindEnum:
+      enum:
+      - EXTRACTED
+      - REVIEW
+      - DUPLICATE
+      - MANUAL
+      type: string
+      description: |-
+        * `EXTRACTED` - EXTRACTED
+        * `REVIEW` - REVIEW
+        * `DUPLICATE` - DUPLICATE
+        * `MANUAL` - MANUAL
     SourceRegion:
       type: object
       description: |-
@@ -9150,6 +10549,33 @@ components:
           type: string
           description: Which sheet this came from. Required by NFR-3.
           maxLength: 255
+        sheet_name:
+          type: string
+          description: The programme as purchasing refers to it, e.g. 'Hager L3 Program'.
+          maxLength: 255
+        protected_until:
+          type: string
+          format: date
+          nullable: true
+          description: The date CBC's cost is held to. Past it a mid-year list increase
+            reaches the quote, so a lapsed protection is a reason to confirm before
+            a proposal goes out — not merely a stale date.
+        steward:
+          type: string
+          description: Who owns this sheet. Blank is the honest answer while NFR-10
+            is open.
+          maxLength: 255
+        reviewed_on:
+          type: string
+          format: date
+          nullable: true
+          description: When someone last checked this against the vendor.
+        note:
+          type: string
+          description: What an estimator should know.
+        is_stale:
+          type: boolean
+          readOnly: true
         effective_date:
           type: string
           format: date
@@ -9164,6 +10590,7 @@ components:
       required:
       - created_at
       - id
+      - is_stale
       - multiplier
       - updated_at
       - vendor_name
@@ -9188,6 +10615,30 @@ components:
           type: string
           description: Which sheet this came from. Required by NFR-3.
           maxLength: 255
+        sheet_name:
+          type: string
+          description: The programme as purchasing refers to it, e.g. 'Hager L3 Program'.
+          maxLength: 255
+        protected_until:
+          type: string
+          format: date
+          nullable: true
+          description: The date CBC's cost is held to. Past it a mid-year list increase
+            reaches the quote, so a lapsed protection is a reason to confirm before
+            a proposal goes out — not merely a stale date.
+        steward:
+          type: string
+          description: Who owns this sheet. Blank is the honest answer while NFR-10
+            is open.
+          maxLength: 255
+        reviewed_on:
+          type: string
+          format: date
+          nullable: true
+          description: When someone last checked this against the vendor.
+        note:
+          type: string
+          description: What an estimator should know.
         effective_date:
           type: string
           format: date

@@ -33,11 +33,16 @@ class MarginBandSerializer(serializers.ModelSerializer):
 
 
 class VendorMultiplierSerializer(serializers.ModelSerializer):
+    #: Derived, never stored — see the model. A stored staleness flag is wrong the
+    #: day after it is written, which is precisely when it matters.
+    is_stale = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = VendorMultiplier
         fields = ["id", "vendor_name", "tier", "multiplier", "source_sheet_version",
-                  "effective_date", "created_at", "updated_at"]
-        read_only_fields = ["id", "created_at", "updated_at"]
+                  "sheet_name", "protected_until", "steward", "reviewed_on", "note",
+                  "is_stale", "effective_date", "created_at", "updated_at"]
+        read_only_fields = ["id", "is_stale", "created_at", "updated_at"]
 
 
 class TaxRateSerializer(serializers.ModelSerializer):

@@ -25,6 +25,7 @@ urlpatterns = [
     path("api/", include("pricing.urls")),
     path("api/", include("quotes.urls")),
     path("api/", include("feedback.urls")),
+    path("api/", include("notes.urls")),
     # The frontend generates its types from this schema; it is never hand-typed
     # (§8.2, fixes defect H2).
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

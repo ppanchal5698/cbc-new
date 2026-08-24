@@ -23,6 +23,7 @@ from shared.enums import (
     ExtractionRunStatus,
     FireRatingLocation,
     Handing,
+    ItemSource,
     MatchStatus,
     ReviewState,
 )
@@ -189,10 +190,96 @@ class Opening(TimestampedModel):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name="openings")
     extraction_run = models.ForeignKey(
-        ExtractionRun, on_delete=models.CASCADE, related_name="openings"
+        ExtractionRun,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="openings",
+        help_text=(
+            "Null for an item an estimator typed in. Attributing a hand-written "
+            "line to a model run would claim a provenance it does not have, which "
+            "is the same class of untruth §5.6 rejects a fabricated citation for."
+        ),
     )
 
-    door_number = models.CharField(max_length=100, help_text="The key everything hangs off.")
+    # -- what the estimator's ledger shows (the four columns before Size) ------
+    # A bid set is not only doors. The same pass reads grab bars off a fixture
+    # schedule, mirrors off a restroom plan and FRP trim off a finish legend, and
+    # an estimator triages all of it in one list. So the row is a *line item*
+    # first and an opening second: `door_number` is the mark where there is one
+    # and null where there is not, and `description` is what the sheet printed.
+    door_number = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text="The mark, where the item has one. Null for a grab bar or a mirror.",
+    )
+    description = models.TextField(
+        blank=True,
+        default="",
+        help_text="The item as printed on the sheet. The ledger's widest column.",
+    )
+    csi_division = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        help_text="Full CSI section, e.g. '08 11 00' or '10 28 00'. The quote groups by this.",
+    )
+    quantity = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=(
+            "How many the document says. Distinct from the quote line's quantity, "
+            "which an estimator may change without altering what was read."
+        ),
+    )
+
+    source_kind = models.CharField(
+        max_length=20,
+        choices=ItemSource.choices(),
+        default=ItemSource.EXTRACTED.value,
+        db_index=True,
+        help_text=(
+            "How the ledger presents this row and which quick action it offers. "
+            "Distinct from review_state, which is about one field passing the gate."
+        ),
+    )
+
+    # -- where it was read, in words an estimator recognises ------------------
+    # The polygon provenance in field_provenance is what proves a value; these two
+    # are what a human reads at a glance. "A-601 · Row 4" is how estimators talk
+    # about a bid set, and no join answers that question as quickly.
+    sheet_label = models.CharField(
+        max_length=64, blank=True, default="", help_text="Sheet number, e.g. 'A-601'."
+    )
+    cell_label = models.CharField(
+        max_length=64, blank=True, default="", help_text="Where on the sheet, e.g. 'Row 4'."
+    )
+    quote_text = models.TextField(
+        blank=True,
+        default="",
+        help_text="The line as it will print on the proposal, before pricing.",
+    )
+
+    # -- duplicates (§4.7 in the small) ---------------------------------------
+    duplicate_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="duplicates",
+        help_text=(
+            "The other reading of the same physical item — most often a base "
+            "schedule row and the addendum that reissued it. Both rows are kept "
+            "until an estimator says which to price: dropping one automatically "
+            "would decide a question the documents genuinely leave open."
+        ),
+    )
+    duplicate_note = models.TextField(
+        blank=True, default="", help_text="Why these two look like the same item."
+    )
 
     # -- size: fixed 4-digit rule, parsed by code not by the model (§5.7) ------
     size_raw = models.CharField(
@@ -278,8 +365,19 @@ class Opening(TimestampedModel):
 
     class Meta:
         constraints = [
+            # Keyed on where it was read, not just on the mark. The same opening
+            # legitimately appears twice in one run — a base schedule row and the
+            # addendum that reissued it — and that pair is the duplicate an
+            # estimator has to resolve. Keying on the mark alone would make the
+            # database refuse to record the very thing the ledger exists to show.
             models.UniqueConstraint(
-                fields=["project", "extraction_run", "door_number"], name="uniq_opening_per_run"
+                fields=["project", "extraction_run", "door_number", "sheet_label", "cell_label"],
+                name="uniq_opening_per_run",
+            ),
+            # An item cannot be its own duplicate.
+            models.CheckConstraint(
+                condition=~models.Q(duplicate_of=models.F("id")),
+                name="ck_duplicate_is_another_row",
             ),
             # A rating cannot simultaneously be present and declared absent.
             # Enforced in the database because "absent" is a safety claim (§5.8).
