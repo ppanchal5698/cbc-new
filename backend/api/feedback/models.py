@@ -106,6 +106,27 @@ class ExtractionMetric(TimestampedModel):
         default=0, help_text="At most one per call, and only for malformed JSON (§5.6)."
     )
 
+    # -- cross-schedule resolution (§5.11) ------------------------------------
+    # Its own drift signal. A rising unresolved rate means the Division 08 spec
+    # section is no longer being located, not that bid sets stopped using named
+    # hardware sets — and the visible symptom is quotes quietly missing most of
+    # their lines.
+    hardware_callouts = models.IntegerField(
+        default=0, help_text="Distinct hardware-group callouts found in the door schedule."
+    )
+    hardware_sets_resolved = models.IntegerField(default=0)
+    hardware_sets_unresolved = models.IntegerField(
+        default=0, help_text="Callout present, definition not in the document. Never guessed."
+    )
+    hardware_components_written = models.IntegerField(default=0)
+
+    @property
+    def hardware_resolution_rate(self) -> float:
+        """Share of callouts whose definition was found in the document."""
+        if not self.hardware_callouts:
+            return 0.0
+        return self.hardware_sets_resolved / self.hardware_callouts
+
     @property
     def citation_rejection_rate(self) -> float:
         """Share of emitted fields the validation gate refused."""

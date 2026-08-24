@@ -133,6 +133,18 @@ class QuoteLine(TimestampedModel):
     catalog_item = models.ForeignKey(
         "catalog.CatalogItem", on_delete=models.SET_NULL, null=True, blank=True, related_name="quote_lines"
     )
+    hardware_component = models.ForeignKey(
+        "openings.HardwareSetComponent",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="quote_lines",
+        help_text=(
+            "Set when this line came from resolving the opening's hardware-set callout "
+            "(§5.11). Hardware is most of a real CBC quote, and this is the link that "
+            "carries an HW-3 line back to the spec text that defined it."
+        ),
+    )
 
     line_group = models.CharField(
         max_length=50, choices=LineGroup.choices(), default=LineGroup.DOOR.value, db_index=True

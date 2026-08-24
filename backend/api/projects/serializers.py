@@ -128,7 +128,7 @@ class DocumentManifestSerializer(serializers.ModelSerializer):
             "ocr_route", "route_reason", "skipped", "skip_reason",
             "rotation", "width_pt", "height_pt",
             "raster_url", "thumb_url", "ocr_cost_estimate", "page_hash",
-            "forced_by_user", "split_part", "page_offset",
+            "forced_by_user",
         ]
         read_only_fields = fields
 

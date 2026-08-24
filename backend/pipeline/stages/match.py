@@ -118,6 +118,48 @@ class MatchCriteria:
             part_number=None,
         )
 
+    @classmethod
+    def from_component(cls, component, opening) -> MatchCriteria:
+        """
+        Criteria for one hardware-set component **as it applies to one opening**.
+
+        The rating and handing constraints come from the *opening*, not from the
+        component: rated hardware is a distinct certified product line and handed
+        parts are separate SKUs (§1.3, §5.8), so the same ``HW-3`` on a 90-minute
+        door and on an unrated one are two different matching problems. A line in
+        a hardware-set definition carries no certification claim of its own, and
+        inventing one for it is exactly what §5.8 exists to prevent.
+        """
+        finish = opening.finish_code
+        return cls(
+            description=" ".join(
+                part
+                for part in (
+                    component.description,
+                    component.manufacturer,
+                    component.part_number,
+                    component.finish_raw,
+                )
+                if part
+            ),
+            csi_division="08",
+            fire_rating_minutes=opening.fire_rating_minutes,
+            fire_rating_absent=opening.fire_rating_absent,
+            handing=opening.handing,
+            handing_absent=opening.handing_absent,
+            finish_code_id=str(finish.id) if finish else None,
+            finish_base_metal=finish.base_metal if finish else None,
+            # A hinge has no door dimensions. Leaving these null keeps size out of
+            # the score entirely rather than scoring every component against 3070.
+            width_inches=None,
+            height_inches=None,
+            vendor=component.manufacturer or None,
+            # Unlike an opening, a component frequently names the exact part the
+            # architect specified — the normal case, and the strongest evidence
+            # the matcher ever gets (§1.3).
+            part_number=component.part_number or None,
+        )
+
     @property
     def rating_is_unresolved(self) -> bool:
         """
@@ -587,27 +629,27 @@ def match_opening(opening, snapshot: CatalogSnapshot, **kwargs) -> MatchResult:
 # Persistence
 # ---------------------------------------------------------------------------
 
-def persist_matches(opening, result: MatchResult) -> list:
+def persist_matches(opening, result: MatchResult, *, component=None) -> list:
     """
-    Write ``matches`` rows for one opening.
+    Write ``matches`` rows for one opening, or for one component of its hardware set.
 
     Rejected candidates are **not** written: with a full catalogue every opening
     would accumulate hundreds of rows recording that a grab bar is not a door.
     The one exception is a manual routing with no eligible candidate at all, where
-    the reason is recorded on the opening so the estimator can see why nothing was
-    proposed.
+    the reason is recorded so the estimator can see why nothing was proposed.
     """
     from django.db import transaction
     from openings.models import Match
 
     written = []
     with transaction.atomic():
-        Match.objects.filter(opening=opening).delete()
+        Match.objects.filter(opening=opening, hardware_component=component).delete()
 
         for rank, candidate in enumerate(result.accepted, start=1):
             written.append(
                 Match.objects.create(
                     opening=opening,
+                    hardware_component=component,
                     catalog_item_id=candidate.catalog_item_id,
                     rank=rank,
                     match_confidence=candidate.match_confidence,
@@ -632,10 +674,11 @@ def persist_matches(opening, result: MatchResult) -> list:
             )
 
         if result.status == MatchStatus.MANUAL.value and result.manual_reason:
-            opening.review_notes = (
-                f"{opening.review_notes}\n{result.manual_reason}".strip()
-            )
-            opening.save(update_fields=["review_notes", "updated_at"])
+            # The reason belongs on whichever record was matched — a component
+            # routed to manual is not a finding about the door.
+            target = component if component is not None else opening
+            target.review_notes = f"{target.review_notes}\n{result.manual_reason}".strip()
+            target.save(update_fields=["review_notes", "updated_at"])
 
     return written
 
@@ -645,11 +688,19 @@ def match_project(project, *, snapshot: CatalogSnapshot | None = None) -> dict:
     from openings.models import Opening
 
     snapshot = snapshot or CatalogSnapshot.load()
-    counts = {"openings": 0, "proposed": 0, "manual": 0, "matches_written": 0}
+    counts = {
+        "openings": 0,
+        "components": 0,
+        "proposed": 0,
+        "manual": 0,
+        "matches_written": 0,
+    }
 
     openings = Opening.objects.filter(project=project).select_related(
         "finish_code", "throat_depth"
     )
+    components = components_by_group(project)
+
     for opening in openings:
         result = match_opening(opening, snapshot)
         written = persist_matches(opening, result)
@@ -660,5 +711,38 @@ def match_project(project, *, snapshot: CatalogSnapshot | None = None) -> dict:
         else:
             counts["proposed"] += 1
 
+        # §5.11: the door schedule's HW-3 callout resolved to a component list,
+        # and each component is its own item to source and price. Matched once
+        # per opening rather than once per set, because the hard constraints are
+        # the opening's — see MatchCriteria.from_component.
+        for component in components.get(opening.hardware_group or "", ()):
+            component_result = match_criteria(
+                MatchCriteria.from_component(component, opening), snapshot
+            )
+            counts["matches_written"] += len(
+                persist_matches(opening, component_result, component=component)
+            )
+            counts["components"] += 1
+
     log.info("matching complete", extra={"project_id": str(project.id), **counts})
     return counts
+
+
+def components_by_group(project) -> dict[str, list]:
+    """
+    Resolved hardware components for a project, grouped by callout.
+
+    Unresolved callouts are excluded on purpose: they carry no components to
+    match, and they are already surfaced as flagged rows for the estimator
+    (§5.11). Matching them would produce candidates for an item nobody has
+    established exists.
+    """
+    from openings.models import HardwareSetComponent
+
+    grouped: dict[str, list] = {}
+    rows = HardwareSetComponent.objects.filter(project=project, resolved=True).order_by(
+        "hardware_group", "component_index"
+    )
+    for row in rows:
+        grouped.setdefault(row.hardware_group, []).append(row)
+    return grouped

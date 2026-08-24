@@ -59,6 +59,9 @@ def run(document) -> dict:
             "locate_prompt_sha": extract_stage.prompt_fingerprint(
                 "locate", settings_obj.locate_prompt_version
             ),
+            "hardware_prompt_sha": extract_stage.prompt_fingerprint(
+                "hardware", settings_obj.hardware_prompt_version
+            ),
         },
         ocr_result_version_id=document.ocr_result_version_id,
         route_config_version=table.content_hash,
@@ -108,9 +111,14 @@ def run(document) -> dict:
         link_job = repo.get_or_create_job(document, PipelineStage.LINK)
         repo.start_job(link_job)
         with timed("LINK", log):
-            # One query for every cited element, rather than one per citation:
-            # a 40-opening schedule cites hundreds of elements (bottleneck B11).
-            all_ids = {eid for _, elements in records for eid in elements}
+            # One query for every element the model was shown, rather than one per
+            # citation: a 40-opening schedule cites hundreds (bottleneck B11).
+            #
+            # Every batch, not just the extractable ones — the hardware-definition
+            # tables are cited by §5.11 resolution below, and a component whose
+            # cited element is missing from this map gets a provenance row with no
+            # page and no bbox, which is a citation the viewer cannot show.
+            all_ids = {eid for batch in batches for eid in batch.elements}
             element_rows = {
                 str(row.id): row
                 for row in DocElement.objects.filter(id__in=all_ids)
@@ -130,6 +138,17 @@ def run(document) -> dict:
                     linked=linked,
                     stats=stats,
                 )
+            # §5.11, still inside LINK because it is the same contract: cite a
+            # real element, ground the value in it, or be rejected.
+            _resolve_hardware(
+                document=document,
+                run_row=run_row,
+                batches=batches,
+                classifications=classifications,
+                element_rows=element_rows,
+                stats=stats,
+                model_id=premium,
+            )
         repo.complete_job(link_job)
         repo.complete_job(extract_job)
 
@@ -165,6 +184,111 @@ def run(document) -> dict:
         raise
 
 
+#: What Pass A must call a table for it to be a hardware-set definition.
+HARDWARE_DEFINITION = {"HARDWARE_SCHEDULE"}
+
+
+def _resolve_hardware(
+    *, document, run_row, batches, classifications, element_rows, stats, model_id
+) -> None:
+    """
+    Resolve the door schedule's hardware-group callouts to component lists (§5.11).
+
+    A door schedule says ``HW-3``; the Division 08 spec section defines what
+    ``HW-3`` contains. Joining them is a separate call with its own narrow context
+    — a different task with different failure modes, and mixing it into opening
+    extraction degrades both.
+
+    Runs after the openings are persisted because the callouts *are* the input:
+    resolving every set the document happens to define would pay for hardware no
+    opening on this bid asks for.
+
+    A callout whose definition is not in the document comes back unresolved and is
+    persisted as a flagged row. It is never filled in from what such a set usually
+    contains — a hardware set invented from the model's general knowledge is
+    precisely the failure NFR-2 prohibits.
+    """
+    from openings.models import Opening
+
+    callouts = {
+        group
+        for group in Opening.objects.filter(extraction_run=run_row)
+        .exclude(hardware_group__isnull=True)
+        .exclude(hardware_group="")
+        .values_list("hardware_group", flat=True)
+    }
+    if not callouts:
+        return
+
+    definitions = [
+        batch for batch in batches
+        if classifications.get(batch.table_id) in HARDWARE_DEFINITION
+    ]
+    if not definitions:
+        # No definition block anywhere in the document. Every callout is
+        # unresolved, and saying so is the answer — not a reason to skip.
+        for group in sorted(callouts):
+            link_stage.persist_hardware_set(
+                project=document.project,
+                extraction_run=run_row,
+                hardware_group=group,
+                resolved=False,
+                explicit_part=False,
+                components=[],
+                stats=stats,
+            )
+        log.info(
+            "no hardware-set definition table found; %d callout(s) recorded unresolved",
+            len(callouts),
+        )
+        return
+
+    resolved = extract_stage.resolve_hardware_sets(
+        definitions, callouts, model_id=model_id, version=get_settings().hardware_prompt_version
+    )
+    if resolved is None:
+        return
+    response, supplied = resolved
+
+    seen = set()
+    for entry in response.payload.get("sets", []):
+        group = entry.get("hardware_group")
+        if not group:
+            continue
+        seen.add(group)
+        components = [
+            link_stage.link_component(
+                component,
+                supplied_elements=supplied,
+                element_rows=element_rows,
+                stats=stats,
+            )
+            for component in entry.get("components", [])
+        ]
+        link_stage.persist_hardware_set(
+            project=document.project,
+            extraction_run=run_row,
+            hardware_group=group,
+            resolved=bool(entry.get("resolved")),
+            explicit_part=bool(entry.get("explicit_part")),
+            components=components,
+            stats=stats,
+        )
+
+    # A callout the model did not mention has not been ruled out — it has been
+    # forgotten. Same reasoning as the locate pass: silence is not an answer.
+    for group in sorted(callouts - seen):
+        link_stage.persist_hardware_set(
+            project=document.project,
+            extraction_run=run_row,
+            hardware_group=group,
+            resolved=False,
+            explicit_part=False,
+            components=[],
+            stats=stats,
+        )
+
+
 def _match(document) -> dict:
     """
     MATCH — deterministic, no LLM (§6.1).
@@ -181,7 +305,63 @@ def _match(document) -> dict:
         with timed("MATCH", log):
             counts = match_stage.match_project(document.project)
         repo.complete_job(job)
-        return counts
+    except Exception as exc:
+        repo.fail_job(job, str(exc))
+        raise
+
+    _price(document)
+    return counts
+
+
+def _price(document) -> None:
+    """
+    PRICE — build the draft quote and total it (§3.3 step 11, §6.2, FR-7).
+
+    Deterministic, and there is no LLM call anywhere in this path. It runs here
+    rather than waiting for the estimator to ask because the promise in NFR-6 is
+    a *reviewable draft* in minutes — a grid of matched openings is a finding
+    list, not a draft, and re-keying it into a quote by hand is the manual work
+    this system exists to remove.
+
+    A project that already has a draft with generated lines is left alone: a
+    second document on the same bid (an addendum, a separate hardware spec) must
+    not rebuild over an estimator's edits. Regenerating is an explicit action on
+    the quote endpoint.
+    """
+    from quotes.draft_ops import DraftError, generate_lines
+    from quotes.models import Quote
+
+    from shared.enums import QuoteStatus
+
+    job = repo.get_or_create_job(document, PipelineStage.PRICE)
+    repo.start_job(job)
+    try:
+        with timed("PRICE", log):
+            quote, was_created = Quote.objects.get_or_create(
+                project=document.project,
+                status=QuoteStatus.DRAFT.value,
+                defaults={"tax_jurisdiction": None},
+            )
+            try:
+                generate_lines(quote)
+            except DraftError as exc:
+                # Not a failure: an existing draft with lines is the normal
+                # outcome for the second document on a bid.
+                log.info("draft quote left as it stands: %s", exc)
+                repo.complete_job(job)
+                return
+
+        log.info(
+            "draft quote ready",
+            extra={
+                "quote_id": str(quote.id),
+                # Not "created": logging reserves that attribute on LogRecord and
+                # raises rather than shadowing it.
+                "quote_created": was_created,
+                "grand_total": str(quote.grand_total),
+            },
+        )
+        repo.complete_job(job)
     except Exception as exc:
         repo.fail_job(job, str(exc))
         raise

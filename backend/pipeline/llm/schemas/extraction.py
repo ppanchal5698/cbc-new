@@ -28,6 +28,11 @@ OPENING_FIELDS = (
 #: per-field threshold (§5.8).
 ZERO_TOLERANCE_FIELDS = ("fire_rating", "handing")
 
+#: The cited fields of one hardware-set component (§5.11). Only ``description``
+#: is required by the tool schema; the rest are frequently absent in a real spec
+#: and an absence is a legitimate result, not a gap.
+COMPONENT_FIELDS = ("quantity", "description", "manufacturer", "part_number", "finish")
+
 
 def _cited_field(description: str) -> dict:
     """

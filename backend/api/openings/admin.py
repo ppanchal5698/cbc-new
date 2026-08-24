@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import DocElement, ExtractionRun, FieldProvenance, FieldProvenanceElement, Match, Opening
+from .models import (
+    DocElement,
+    ExtractionRun,
+    FieldProvenance,
+    FieldProvenanceElement,
+    HardwareSetComponent,
+    Match,
+    Opening,
+)
 
 
 @admin.register(DocElement)
@@ -41,3 +49,13 @@ class MatchAdmin(admin.ModelAdmin):
         "rating_ok", "handing_ok", "finish_ok",
     )
     list_filter = ("status", "rating_ok", "handing_ok", "division_ok", "is_direct_equal")
+
+
+@admin.register(HardwareSetComponent)
+class HardwareSetComponentAdmin(admin.ModelAdmin):
+    list_display = (
+        "hardware_group", "component_index", "description", "manufacturer",
+        "part_number", "resolved", "review_state",
+    )
+    list_filter = ("resolved", "explicit_part", "review_state")
+    search_fields = ("hardware_group", "description", "manufacturer", "part_number")

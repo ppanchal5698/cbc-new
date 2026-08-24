@@ -35,9 +35,41 @@ log = logging.getLogger("cbc.ocr")
 #: Textract's ClientRequestToken accepts [a-zA-Z0-9-_] up to 64 characters.
 TOKEN_MAX = 64
 
+#: Textract async limits per document (§4.6, C16). Triage submits a routed-page
+#: subset rather than the whole plan set, so these are a guard against a document
+#: that is pathological even after triage — not a workflow to plan around.
+MAX_PAGES = 3000
+MAX_BYTES = 500 * 1024 * 1024
+
 
 class OCRError(RuntimeError):
     """Textract refused the request or returned a failed job."""
+
+
+class DocumentTooLarge(OCRError):
+    """Even the routed subset exceeds what Textract async accepts."""
+
+
+def assert_within_limits(*, pages: int, size_bytes: int) -> None:
+    """
+    Refuse before spending, with a reason an estimator can act on.
+
+    Both source documents quoted the 3,000-page / 500 MB limit and neither
+    handled it; a document that silently fails at the API is a worse outcome than
+    a slow one (§4.6).
+    """
+    if pages > MAX_PAGES:
+        raise DocumentTooLarge(
+            f"{pages} pages were routed to OCR, over Textract's {MAX_PAGES}-page limit. "
+            f"Nothing has been spent. Split the bid set into separate uploads, or narrow "
+            f"the routing table if this many pages were classified as schedules by mistake."
+        )
+    if size_bytes > MAX_BYTES:
+        raise DocumentTooLarge(
+            f"the routed subset is {size_bytes / 1024 / 1024:.0f} MB, over Textract's "
+            f"{MAX_BYTES // 1024 // 1024} MB limit. Nothing has been spent. Split the bid "
+            f"set into separate uploads."
+        )
 
 
 @dataclass(frozen=True)

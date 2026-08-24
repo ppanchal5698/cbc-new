@@ -139,32 +139,33 @@ def synthesize_page(page: pymupdf.Page, page_number: int, *, with_tables: bool) 
     return blocks
 
 
-def synthesize(file_bytes: bytes, probes) -> dict:
+def synthesize(file_bytes: bytes, routed: list[tuple[int, str]]) -> dict:
     """
     Build a Textract-shaped result for the pages triage actually routed to OCR.
 
-    Only routed pages are synthesised. Producing blocks for skipped pages would
-    make the offline loop behave *better* than production, hiding exactly the
-    triage mistakes Risk R12 asks us to watch for.
-    """
-    ocr_routes = {OCRRoute.TEXTRACT_TABLES.value, OCRRoute.TEXTRACT_TEXT.value}
-    routed = {p.page_number: p.ocr_route for p in probes if p.ocr_route in ocr_routes}
+    ``routed`` is ``(document_global_page, ocr_route)`` in submission order.
 
+    Blocks are numbered **subset-local, from 1**, because that is what Textract
+    returns for the routed-page subset the real path submits. Emitting global
+    numbers here would make the offline loop take a different normalisation
+    branch from production — which is precisely how the triage-at-submission gap
+    survived a green test suite in the first place.
+    """
     blocks: list[dict] = []
     with pymupdf.open(stream=file_bytes, filetype="pdf") as doc:
-        for page_number, route in sorted(routed.items()):
+        for local_page, (page_number, route) in enumerate(routed, start=1):
             page = doc[page_number - 1]
             blocks.append(
                 {
                     "BlockType": "PAGE",
-                    "Id": f"fake-page-{page_number}",
-                    "Page": page_number,
+                    "Id": f"fake-page-{local_page}",
+                    "Page": local_page,
                     "Geometry": _geometry(page.rect, page.rect.width, page.rect.height),
                 }
             )
             blocks.extend(
                 synthesize_page(
-                    page, page_number, with_tables=(route == OCRRoute.TEXTRACT_TABLES.value)
+                    page, local_page, with_tables=(route == OCRRoute.TEXTRACT_TABLES.value)
                 )
             )
 

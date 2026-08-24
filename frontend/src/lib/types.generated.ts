@@ -589,6 +589,58 @@ export interface paths {
         patch: operations["finish_codes_partial_update"];
         trace?: never;
     };
+    "/api/hardware-components/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Resolved hardware-set components (§5.11).
+         *
+         *     Read-only: a component is what the Division 08 spec section says, and editing
+         *     it here would break its provenance chain. Correcting one is an edit to the
+         *     *quote line* it produced, which is where FR-9 puts every other estimator
+         *     correction and where the FR-13 feedback row is written.
+         *
+         *     Filter by ``resolved=false`` to see the callouts the system refused to invent.
+         */
+        get: operations["hardware_components_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hardware-components/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Resolved hardware-set components (§5.11).
+         *
+         *     Read-only: a component is what the Division 08 spec section says, and editing
+         *     it here would break its provenance chain. Correcting one is an edit to the
+         *     *quote line* it produced, which is where FR-9 puts every other estimator
+         *     correction and where the FR-13 feedback row is written.
+         *
+         *     Filter by ``resolved=false`` to see the callouts the system refused to invent.
+         */
+        get: operations["hardware_components_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health/": {
         parameters: {
             query?: never;
@@ -1240,6 +1292,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/quotes/{id}/generate-lines/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build this quote's lines from the project's matched openings (FR-7)
+         * @description One line per opening, each door's hardware set immediately beneath it, a restroom-accessories block, and a freight line that renders TBD. The pipeline already does this when matching completes; this endpoint is the regenerate action for after an estimator changes which matches are accepted. Refuses to overwrite existing generated lines unless replace=true, and never touches hand-added ones.
+         */
+        post: operations["quotes_generate_lines_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/quotes/{id}/recalculate/": {
         parameters: {
             query?: never;
@@ -1782,8 +1854,6 @@ export interface components {
             readonly page_hash: string | null;
             /** @description An estimator overrode the routing decision — 'read page 47 anyway' (Risk R12). */
             readonly forced_by_user: number | null;
-            readonly split_part: number;
-            readonly page_offset: number;
         };
         /**
          * @description * `BID_SET` - BID_SET
@@ -1853,6 +1923,14 @@ export interface components {
             readonly schema_repair_retries: number;
             /** Format: double */
             readonly citation_rejection_rate: number;
+            /** @description Distinct hardware-group callouts found in the door schedule. */
+            readonly hardware_callouts: number;
+            readonly hardware_sets_resolved: number;
+            /** @description Callout present, definition not in the document. Never guessed. */
+            readonly hardware_sets_unresolved: number;
+            readonly hardware_components_written: number;
+            /** Format: double */
+            readonly hardware_resolution_rate: number;
             /** Format: date-time */
             readonly created_at: string;
             /** Format: date-time */
@@ -2092,6 +2170,48 @@ export interface components {
          */
         HandingEnum: "LH" | "RH" | "LHR" | "RHR";
         /**
+         * @description One component of a resolved hardware set (§5.11).
+         *
+         *     ``resolved=False`` rows are returned like any other. A callout the system
+         *     could not resolve is a finding the estimator has to act on, and hiding it
+         *     would leave the opening pointing at a set that silently produces no lines.
+         */
+        HardwareSetComponent: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly project: string;
+            /** Format: uuid */
+            readonly extraction_run: string;
+            /** @description The callout as written, e.g. 'HW-3'. */
+            readonly hardware_group: string;
+            /**
+             * @description Order within the set, as the specification lists it.
+             * @default 0
+             */
+            readonly component_index: number;
+            /** @description False when the callout appears in the door schedule but its definition is not in this document. Never filled in from general knowledge (§5.11). */
+            readonly resolved: boolean;
+            /** @description The architect named a manufacturer part or series instead of a set. Not a resolution failure — the normal case (§1.3). */
+            readonly explicit_part: boolean;
+            readonly description: string;
+            readonly manufacturer: string | null;
+            readonly part_number: string | null;
+            readonly finish_raw: string | null;
+            readonly quantity_raw: string | null;
+            /**
+             * Format: decimal
+             * @description Parsed from quantity_raw. Null when the source did not state one.
+             */
+            readonly quantity: string | null;
+            review_state?: components["schemas"]["ReviewStateEnum"];
+            review_notes?: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
          * @description * `DOOR` - DOOR
          *     * `RESTROOM_ACCESSORIES` - RESTROOM_ACCESSORIES
          *     * `FREIGHT` - FREIGHT
@@ -2153,6 +2273,11 @@ export interface components {
             readonly id: string;
             /** Format: uuid */
             readonly opening: string;
+            /**
+             * Format: uuid
+             * @description Null for the door itself; set for one component of the hardware set that opening calls for (§5.11). The opening is recorded either way, because the rating and handing hard constraints belong to the opening — the same HW-3 on a 90-minute door and on an unrated one are not the same match.
+             */
+            readonly hardware_component: string | null;
             /** Format: uuid */
             readonly catalog_item: string;
             readonly catalog_vendor: string;
@@ -2462,6 +2587,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["FinishCode"][];
+        };
+        PaginatedHardwareSetComponentList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["HardwareSetComponent"][];
         };
         PaginatedMarginBandList: {
             /** @example 123 */
@@ -3253,6 +3393,11 @@ export interface components {
             /** Format: uuid */
             catalog_item?: string | null;
             readonly catalog_item_detail: components["schemas"]["CatalogItem"];
+            /**
+             * Format: uuid
+             * @description Set when this line came from resolving the opening's hardware-set callout (§5.11). Hardware is most of a real CBC quote, and this is the link that carries an HW-3 line back to the spec text that defined it.
+             */
+            hardware_component?: string | null;
             line_group?: components["schemas"]["LineGroupEnum"];
             description?: string;
             unit?: string;
@@ -4986,6 +5131,68 @@ export interface operations {
             };
         };
     };
+    hardware_components_list: {
+        parameters: {
+            query?: {
+                extraction_run?: string;
+                hardware_group?: string;
+                /** @description Which field to use when ordering the results. */
+                ordering?: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                project?: string;
+                resolved?: boolean;
+                /**
+                 * @description * `AUTO` - AUTO
+                 *     * `FLAGGED` - FLAGGED
+                 *     * `CONFIRMED` - CONFIRMED
+                 *     * `CORRECTED` - CORRECTED
+                 *     * `REJECTED` - REJECTED
+                 */
+                review_state?: "AUTO" | "CONFIRMED" | "CORRECTED" | "FLAGGED" | "REJECTED";
+                /** @description A search term. */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedHardwareSetComponentList"];
+                };
+            };
+        };
+    };
+    hardware_components_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this hardware set component. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HardwareSetComponent"];
+                };
+            };
+        };
+    };
     health_retrieve: {
         parameters: {
             query?: never;
@@ -6346,6 +6553,31 @@ export interface operations {
         requestBody?: never;
         responses: {
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Quote"];
+                };
+            };
+        };
+    };
+    quotes_generate_lines_create: {
+        parameters: {
+            query?: {
+                /** @description Rebuild generated lines. */
+                replace?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this quote. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

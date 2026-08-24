@@ -22,6 +22,7 @@ from openings.models import (
     ExtractionRun,
     FieldProvenance,
     FieldProvenanceElement,
+    HardwareSetComponent,
     Match,
     Opening,
 )
@@ -184,6 +185,24 @@ class OpeningFactory(factory.django.DjangoModelFactory):
     fire_rating_absent = False
     fire_rating_source_location = "DOOR_SCHEDULE"
     hardware_group = "HW-3"
+    review_state = "AUTO"
+
+
+class HardwareSetComponentFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = HardwareSetComponent
+
+    project = factory.SubFactory(ProjectFactory)
+    extraction_run = factory.SubFactory(ExtractionRunFactory)
+    hardware_group = "HW-3"
+    component_index = factory.Sequence(lambda n: n)
+    resolved = True
+    description = "Full mortise butt hinge"
+    manufacturer = "Hager"
+    part_number = "BB1279"
+    finish_raw = "US26D"
+    quantity_raw = "3"
+    quantity = Decimal("3")
     review_state = "AUTO"
 
 

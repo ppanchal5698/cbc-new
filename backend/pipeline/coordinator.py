@@ -30,6 +30,7 @@ from shared.config import get_settings
 from shared.enums import DocumentStatus, OCRRoute, PipelineJobStatus, PipelineStage
 from shared.s3_keys import (
     get_ocr_result_key,
+    get_ocr_subset_key,
     get_raster_ocr_input_key,
     get_raster_thumb_key,
     get_raster_viewer_key,
@@ -157,13 +158,10 @@ def handle_document_ready(payload: dict) -> None:
                     document.was_repaired = True
                     document.save(update_fields=["was_repaired", "updated_at"])
 
-                probes = preprocess_stage.plan_splits(
-                    preprocess_stage.analyze_document(
-                        usable,
-                        table=table,
-                        max_cost_usd=settings_obj.max_ocr_cost_per_document_usd,
-                    ),
-                    settings_obj.split_max_pages,
+                probes = preprocess_stage.analyze_document(
+                    usable,
+                    table=table,
+                    max_cost_usd=settings_obj.max_ocr_cost_per_document_usd,
                 )
 
             with timed("RASTER", log):
@@ -220,18 +218,54 @@ def _render_and_upload(document, data: bytes, probes, settings_obj) -> dict:
     return keys
 
 
-def _submit_ocr(document, payload: dict, table) -> None:
+def _routed_pages(document) -> list[tuple[int, str]]:
     """
-    Submit the document to Textract, once, idempotently (B8).
+    ``(page_number, ocr_route)`` for every page triage routed to OCR, in page order.
 
-    Note what is *not* here: no wait, no poll, no sleep. The worker submits and
-    moves on to the next message; completion arrives on SNS.
+    Read from the persisted manifest rather than recomputed: the manifest is the
+    record of what the system decided and what the estimator is shown in the UI,
+    and replaying against a fresh classification could silently disagree with it.
+
+    The ordering is load-bearing — it *is* the map from submitted-subset page N
+    back to the document-global page number (§4.6 rule 3).
     """
     from projects.models import DocumentManifest
+
+    return list(
+        DocumentManifest.objects.filter(
+            document=document,
+            ocr_route__in=(OCRRoute.TEXTRACT_TABLES.value, OCRRoute.TEXTRACT_TEXT.value),
+        )
+        .order_by("page_number")
+        .values_list("page_number", "ocr_route")
+    )
+
+
+def _submit_ocr(document, payload: dict, table) -> None:
+    """
+    Submit **only the pages triage routed**, once, idempotently (B1 and B8).
+
+    The routed pages are extracted into a small derived PDF and *that* is what
+    Textract receives. This is the step that turns §4 from a manifest annotation
+    into the 23x cost reduction it is supposed to be: Textract bills per page it
+    processes, so submitting the source PDF pays for all 200 pages of a plan set
+    in order to read the six that carry a schedule.
+
+    Note what is *not* here: no wait, no poll, no sleep. The worker submits and
+    moves on to the next message; completion arrives on SNS (B2).
+    """
+    from projects.models import DocumentManifest
+    from projects.storage_ops import get_source_document, put_derived
 
     routes = set(
         DocumentManifest.objects.filter(document=document).values_list("ocr_route", flat=True)
     )
+    # ponytail: one subset, one job, and TABLES features whenever any page needs
+    # them — so scanned spec pages ride along at the Tables rate rather than the
+    # 10x cheaper DetectDocumentText rate. A second job would need `route` in
+    # uniq_job_document_stage and in the SNS JobTag, for a saving that is second
+    # order once the page count has already dropped ~10x. Split it if the
+    # per-route page counts in `make cost-report` ever say otherwise.
     if OCRRoute.TEXTRACT_TABLES.value in routes:
         route = OCRRoute.TEXTRACT_TABLES
     elif OCRRoute.TEXTRACT_TEXT.value in routes:
@@ -262,18 +296,17 @@ def _submit_ocr(document, payload: dict, table) -> None:
         return
 
     repo.start_job(job)
+    routed = _routed_pages(document)
+    pages = [page for page, _ in routed]
 
     if get_settings().fake_ocr:
         # Offline loop: synthesise blocks from the PDF's own text layer and run
         # the completion path directly. Everything downstream — normalisation,
         # element_path construction, the viewer overlay — is exercised for real.
-        from projects.storage_ops import get_source_document, put_derived
-
         from pipeline.stages import fake_ocr as fake
 
         data = get_source_document(document.file_key, document.file_version_id)
-        probes = _probes_from_manifest(document)
-        results = fake.synthesize(data, probes)
+        results = fake.synthesize(data, routed)
 
         key = get_ocr_result_key(str(document.id), document.version)
         version_id = put_derived(
@@ -291,9 +324,24 @@ def _submit_ocr(document, payload: dict, table) -> None:
         return
 
     try:
+        data = get_source_document(document.file_key, document.file_version_id)
+        subset = preprocess_stage.subset_pdf(data, pages)
+        ocr_stage.assert_within_limits(pages=len(pages), size_bytes=len(subset))
+
+        subset_key = get_ocr_subset_key(str(document.id), document.version)
+        put_derived(subset_key, subset, content_type="application/pdf")
+        log.info(
+            "submitting routed subset rather than the source document",
+            extra={
+                "pages_submitted": len(pages),
+                "pages_total": document.page_count,
+                "subset_key": subset_key,
+            },
+        )
+
         submission = ocr_stage.submit(
-            bucket=get_settings().s3_source_bucket,
-            key=document.file_key,
+            bucket=get_settings().s3_derived_bucket,
+            key=subset_key,
             route=route,
             idempotency_key=job.idempotency_key or str(job.id),
             job_tag=str(document.id),
@@ -301,6 +349,11 @@ def _submit_ocr(document, payload: dict, table) -> None:
         )
         # BEFORE the call is considered complete (B8).
         repo.record_external_job_id(job, submission.job_id)
+    except ocr_stage.DocumentTooLarge as exc:
+        # Retrying cannot make the document smaller.
+        repo.fail_job(job, str(exc), quarantine=True)
+        repo.set_document_status(document, DocumentStatus.QUARANTINED, str(exc))
+        return
     except Exception as exc:
         repo.fail_job(job, str(exc))
         raise
@@ -357,9 +410,13 @@ def handle_textract_completed(payload: dict) -> None:
 
 
 def normalise_document(document, results: dict) -> int:
-    """Flatten OCR blocks into ``doc_elements`` with stable positional paths."""
-    from projects.models import DocumentManifest
+    """
+    Flatten OCR blocks into ``doc_elements`` with stable positional paths.
 
+    Textract numbered the pages of the subset it received from 1; the routed-page
+    list maps them back to the document-global numbers a citation has to use
+    (§4.6 rule 3).
+    """
     from pipeline.stages import normalize as normalize_stage
     from shared.db_url import to_psycopg_dsn
 
@@ -367,28 +424,24 @@ def normalise_document(document, results: dict) -> int:
     repo.start_job(job)
     try:
         with timed("NORMALIZE", log):
-            offsets = dict(
-                DocumentManifest.objects.filter(document=document).values_list(
-                    "page_number", "page_offset"
-                )
-            )
-            # One offset covers the whole result when the document was not split;
-            # split parts are submitted separately and carry their own.
-            offset = next(iter(set(offsets.values())), 0) if offsets else 0
-
             elements = normalize_stage.parse_blocks(
-                results.get("Blocks", []), page_offset=offset
+                results.get("Blocks", []), submitted_pages=[p for p, _ in _routed_pages(document)]
             )
             written = normalize_stage.bulk_insert_elements(
                 to_psycopg_dsn(get_settings().database_url), str(document.id), elements
             )
         repo.complete_job(job)
-        _extract_and_link(document)
-        repo.set_document_status(document, DocumentStatus.PROCESSED)
-        return written
     except Exception as exc:
         repo.fail_job(job, str(exc))
         raise
+
+    # Outside the block above on purpose. Extraction failing does not un-write
+    # fourteen thousand committed elements, and marking NORMALIZE failed for
+    # something EXTRACT did sends whoever reads the job row to the wrong stage —
+    # which is the entire value of having per-stage rows.
+    _extract_and_link(document)
+    repo.set_document_status(document, DocumentStatus.PROCESSED)
+    return written
 
 
 def _extract_and_link(document) -> None:
@@ -480,21 +533,3 @@ def handle_quote_export(payload: dict) -> None:
             "emailed": delivered,
         },
     )
-
-
-def _probes_from_manifest(document):
-    """
-    Rebuild the minimum probe shape FAKE_OCR needs from the persisted manifest.
-
-    Reads the manifest rather than re-running triage: the manifest is the record
-    of what the system decided, and replaying against a fresh classification could
-    silently disagree with what the estimator sees in the UI.
-    """
-    from types import SimpleNamespace
-
-    from projects.models import DocumentManifest
-
-    return [
-        SimpleNamespace(page_number=row.page_number, ocr_route=row.ocr_route)
-        for row in DocumentManifest.objects.filter(document=document).order_by("page_number")
-    ]

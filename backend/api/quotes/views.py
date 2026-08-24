@@ -67,6 +67,32 @@ class QuoteViewSet(viewsets.ModelViewSet):
         instance.delete()
 
     @extend_schema(
+        summary="Build this quote's lines from the project's matched openings (FR-7)",
+        request=None,
+        responses={200: QuoteSerializer},
+        parameters=[OpenApiParameter("replace", bool, description="Rebuild generated lines.")],
+        description=(
+            "One line per opening, each door's hardware set immediately beneath it, a "
+            "restroom-accessories block, and a freight line that renders TBD. The "
+            "pipeline already does this when matching completes; this endpoint is the "
+            "regenerate action for after an estimator changes which matches are "
+            "accepted. Refuses to overwrite existing generated lines unless "
+            "replace=true, and never touches hand-added ones."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="generate-lines")
+    def generate_lines(self, request, pk=None):
+        from .draft_ops import DraftError, generate_lines
+
+        quote = self.get_object()
+        replace = str(request.query_params.get("replace", "")).lower() in ("1", "true", "yes")
+        try:
+            generate_lines(quote, replace=replace)
+        except DraftError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(QuoteSerializer(quote).data)
+
+    @extend_schema(
         summary="Recalculate the quote from its lines (§6.2 step 4)",
         request=None,
         responses={200: QuoteSerializer},

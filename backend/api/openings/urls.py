@@ -4,6 +4,7 @@ from .views import (
     DocElementViewSet,
     ExtractionRunViewSet,
     FieldProvenanceViewSet,
+    HardwareSetComponentViewSet,
     MatchViewSet,
     OpeningViewSet,
 )
@@ -14,5 +15,8 @@ router.register(r"doc-elements", DocElementViewSet, basename="doc-element")
 router.register(r"extraction-runs", ExtractionRunViewSet, basename="extraction-run")
 router.register(r"provenance", FieldProvenanceViewSet, basename="provenance")
 router.register(r"matches", MatchViewSet, basename="match")
+router.register(
+    r"hardware-components", HardwareSetComponentViewSet, basename="hardware-component"
+)
 
 urlpatterns = router.urls

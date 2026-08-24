@@ -294,10 +294,6 @@ class DocumentManifest(TimestampedModel):
     )
     ocr_cost_estimate = models.DecimalField(max_digits=10, decimal_places=6, null=True, blank=True)
 
-    #: Offset applied to convert a part-local page number back to document-global.
-    page_offset = models.IntegerField(default=0)
-    split_part = models.IntegerField(default=0)
-
     class Meta:
         constraints = [
             models.UniqueConstraint(

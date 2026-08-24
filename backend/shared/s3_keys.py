@@ -60,9 +60,22 @@ def get_native_text_key(document_id: str, version: int, page: int) -> str:
     return f"{document_id}/v{version}/native-text/{page}.json.gz"
 
 
-def get_split_part_key(document_id: str, version: int, part: int) -> str:
-    """One split part of an oversized source PDF. Derived, never source (§4.6)."""
-    return f"{document_id}/v{version}/parts/part{part}.pdf"
+def get_ocr_subset_key(document_id: str, version: int) -> str:
+    """
+    The pages triage actually routed to Textract, extracted into one small PDF.
+
+    Textract bills per page it *processes*, not per page you care about, so the
+    §4 routing decision only becomes a cost decision at the moment of submission:
+    submitting the whole source PDF pays for all 200 pages of a plan set to read
+    the six that carry a schedule (bottleneck B1).
+
+    Submitted-local page N maps back to the document-global page number through
+    the sorted routed-page list — see :func:`pipeline.stages.normalize.parse_blocks`.
+    This also retires splitting (§4.6 / C16): a routed subset is a handful of
+    pages, so the 3,000-page limit is unreachable in practice and is enforced as
+    a guard rather than handled as a workflow.
+    """
+    return f"{document_id}/v{version}/ocr-input/subset.pdf"
 
 
 def get_repaired_pdf_key(document_id: str, version: int) -> str:
@@ -140,7 +153,7 @@ __all__ = [
     "get_source_document_key",
     "get_ocr_result_key",
     "get_native_text_key",
-    "get_split_part_key",
+    "get_ocr_subset_key",
     "get_repaired_pdf_key",
     "get_raster_thumb_key",
     "get_raster_viewer_key",

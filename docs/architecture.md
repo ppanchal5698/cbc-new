@@ -80,9 +80,9 @@ flowchart TB
     subgraph pass2["WORKER · PASS 2"]
         direction LR
         N[4 · Normalize<br/>14,156 elements] --> X[5 · Extract<br/>Bedrock, 2 passes]
-        X --> L[6 · Link<br/>two gates]
+        X --> L[6 · Link<br/>two gates · HW sets]
         L --> M[7 · Match<br/>no LLM]
-        M --> PR[8 · Price<br/>no LLM]
+        M --> PR[8 · Price<br/>draft quote · no LLM]
     end
 
     Q1 --> P1
@@ -132,6 +132,20 @@ detection for prose, the PDF's own text layer where it is rich, and nothing at a
 for drawings. A `NotificationChannel` is attached so the job reports back rather
 than being polled.
 
+**Textract is handed a subset PDF, not the source document.** The routed pages are
+extracted into a small PDF in the derived bucket and that is what gets submitted —
+because Textract bills for every page it *processes*, so submitting the original
+would pay for all 65 pages of a plan set to read the eight that carry a schedule.
+On the Dutch Bros reference set that is $0.12 rather than $0.98. Routing that never
+reaches the submission is a manifest annotation, not a cost decision.
+
+Submitted page *N* maps back to the document-global page number through the sorted
+routed-page list, so a citation always points at a page that means something in the
+PDF the estimator is looking at (§4.6). Nothing stores the map; deriving it is what
+keeps a re-run reproducing identical element identities. This also retires
+splitting: a routed subset is a handful of pages, so Textract's 3,000-page limit is
+enforced as a guard that refuses before spending rather than as a workflow.
+
 The Textract job id is recorded **before** the call is treated as complete. SQS
 delivers at least once, and a redelivered 3,000-page job re-submitted three times
 costs $135 instead of $45 (§9 B8).
@@ -174,6 +188,18 @@ A field failing either is rejected and flagged. Never repaired, never retried in
 acceptance. Citing a real element for a value it does not contain is worse than
 returning nothing, because it looks verifiable.
 
+The same two gates then run again on a different question. A door schedule says
+`HW-3`; the Division 08 spec section on another sheet defines what `HW-3` contains.
+Joining them is a separate call with its own narrow context, and its answer becomes
+`hardware_set_components` — each component citing its own elements, through the
+identical validator. Hardware is most of a real CBC quote, so this is where most of
+the lines come from (§5.11).
+
+A callout whose definition is not in the document is written as an unresolved,
+flagged row and produces no catalogue matches. Every model knows roughly what a
+commercial hardware set contains, and supplying that list would look like a working
+feature while putting invented parts on a priced quote.
+
 ### 7 · Match
 
 *RDS · fully deterministic*
@@ -183,14 +209,29 @@ and stock status score. Below a cut-off it routes to the manual path rather than
 proposing a line (NR-13). **No model is involved in the accept or reject
 decision**, so a rejection can always say which constraint failed.
 
+Each door is matched, and so is every component of the hardware set it calls for.
+Components are matched **per opening**, not once per set, because the rating and
+handing constraints belong to the door: the same `HW-3` on a 90-minute opening and
+on an unrated one are two different matching problems, and a hardware schedule line
+carries no certification claim of its own.
+
 ### 8 · Price
 
 *RDS · no LLM anywhere*
 
-A cost waterfall in strict priority order, vendor multipliers keyed by effective
-date, margin applied as a divisor, tax only for the two jurisdictions that have
-rates. Every figure is **stored, not recomputed on read**, so a quote sent last
-quarter still shows the numbers it was sent with (§6.2).
+The draft quote is built here, not left for the estimator to assemble: one line per
+opening with that door's hardware directly beneath it, a restroom-accessories block,
+and a freight line that renders `TBD`. An opening with no usable match still gets a
+visible line with no price — routed to the manual path is something you can see, not
+something that vanished off the quote.
+
+Then the arithmetic: a cost waterfall in strict priority order, vendor multipliers
+keyed by effective date, margin applied as a divisor, tax only for the two
+jurisdictions that have rates. Every figure is **stored, not recomputed on read**, so
+a quote sent last quarter still shows the numbers it was sent with (§6.2).
+
+Regenerating is an explicit action. A second document on the same bid never rebuilds
+over lines an estimator has been editing.
 
 ## After the pipeline
 

@@ -34,6 +34,9 @@ PROTECTED_ENDPOINTS = [
     "/api/extraction-runs/",
     "/api/provenance/",
     "/api/matches/",
+    # Resolved hardware-set components (§5.11). They carry manufacturer part
+    # numbers off a client bid set — the same confidentiality as an opening.
+    "/api/hardware-components/",
     "/api/catalog-items/",
     "/api/finish-codes/",
     "/api/throat-depths/",
@@ -73,6 +76,7 @@ DETAIL_ACTION_ENDPOINTS = [
     "/api/provenance/{id}/source/",
     "/api/quotes/search/",
     "/api/quotes/{id}/approve/",
+    "/api/quotes/{id}/generate-lines/",
     "/api/quotes/{id}/export/",
     "/api/quotes/{id}/recalculate/",
     "/api/vendor-rfqs/{id}/record-price/",

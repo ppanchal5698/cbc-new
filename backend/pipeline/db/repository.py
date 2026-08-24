@@ -146,8 +146,6 @@ def write_manifest(document, probes, *, raster_keys: dict | None = None) -> int:
                     thumb_key=keys.get("thumb"),
                     ocr_input_key=keys.get("ocr-input"),
                     ocr_cost_estimate=probe.ocr_cost_estimate,
-                    split_part=probe.split_part,
-                    page_offset=probe.page_offset,
                 )
             )
         DocumentManifest.objects.bulk_create(rows, batch_size=500)

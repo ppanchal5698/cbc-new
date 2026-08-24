@@ -75,8 +75,6 @@ class PageProbe:
     route_reason: str
     ocr_cost_estimate: Decimal
     page_hash: str
-    split_part: int = 0
-    page_offset: int = 0
     #: Native text, carried forward for NATIVE_TEXT pages so normalisation does
     #: not have to reopen the PDF.
     native_text: str = field(default="", repr=False)
@@ -421,25 +419,40 @@ def analyze_document(
     return probes
 
 
-def plan_splits(probes: list[PageProbe], max_pages: int) -> list[PageProbe]:
+def routed_pages(probes: list[PageProbe]) -> list[int]:
     """
-    Assign split parts and page offsets (§4.6, resolving C16).
+    The document-global page numbers triage decided are worth an OCR call.
 
-    Textract async accepts 500 MB / 3,000 pages per document; combined plan sets
-    exceed it. Splitting is straightforward — **preserving provenance across the
-    split is not.**
-
-    Every part-local page number is converted back to the document-global number
-    before ``doc_elements`` is written, because a citation must always point at a
-    page number that means something in the PDF the estimator is looking at. The
-    offset recorded here is what makes that conversion possible, and it is what
-    keeps splitting idempotent: ``element_path`` is built from the global index,
-    so re-running after a *different* split still produces identical identities.
+    Sorted ascending, because that ordering *is* the map back from a submitted
+    subset: the i-th page of the subset is the i-th entry here (§4.6 rule 3).
+    Nothing stores the map — deriving it keeps re-running normalisation
+    idempotent, which is the property splitting was supposed to preserve and the
+    reason ``element_path`` is built from the global index.
     """
-    for probe in probes:
-        probe.split_part = (probe.page_number - 1) // max_pages
-        probe.page_offset = probe.split_part * max_pages
-    return probes
+    return sorted(
+        probe.page_number
+        for probe in probes
+        if probe.ocr_route in (OCRRoute.TEXTRACT_TABLES.value, OCRRoute.TEXTRACT_TEXT.value)
+    )
+
+
+def subset_pdf(data: bytes, pages: list[int]) -> bytes:
+    """
+    Extract ``pages`` (1-based, document-global) into a new PDF.
+
+    This is where §4 triage stops being an annotation and starts being money.
+    The manifest records that 6 of 200 pages need structured OCR; submitting the
+    source PDF anyway pays Textract for all 200 (bottleneck B1, §10.3 item 1).
+
+    The source is never mutated — PyMuPDF works on an in-memory copy and the
+    result is written to derived (§4.1 invariant).
+    """
+    if not pages:
+        raise PreprocessError("refusing to build an OCR subset with no pages")
+
+    with pymupdf.open(stream=data, filetype="pdf") as document:
+        document.select([page - 1 for page in pages])
+        return document.tobytes(garbage=3, deflate=True)
 
 
 def summarise(probes: list[PageProbe]) -> dict:

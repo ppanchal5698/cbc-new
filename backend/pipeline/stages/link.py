@@ -25,7 +25,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from pipeline.llm.schemas.extraction import OPENING_FIELDS, ZERO_TOLERANCE_FIELDS
+from pipeline.llm.schemas.extraction import (
+    COMPONENT_FIELDS,
+    OPENING_FIELDS,
+    ZERO_TOLERANCE_FIELDS,
+)
 from pipeline.llm.validators.gate import (
     Verdict,
     completeness_penalty,
@@ -52,6 +56,10 @@ class LinkStats:
     fields_flagged_low_confidence: int = 0
     fields_null_with_citation: int = 0
     openings_written: int = 0
+    hardware_callouts: int = 0
+    hardware_sets_resolved: int = 0
+    hardware_sets_unresolved: int = 0
+    hardware_components_written: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -61,6 +69,12 @@ class LinkStats:
             "fields_rejected_grounding": self.fields_rejected_grounding,
             "fields_flagged_low_confidence": self.fields_flagged_low_confidence,
             "fields_null_with_citation": self.fields_null_with_citation,
+            # §5.11 has its own drift signal: a rising unresolved rate means the
+            # spec section is not being located, not that the sets vanished.
+            "hardware_callouts": self.hardware_callouts,
+            "hardware_sets_resolved": self.hardware_sets_resolved,
+            "hardware_sets_unresolved": self.hardware_sets_unresolved,
+            "hardware_components_written": self.hardware_components_written,
         }
 
 
@@ -119,32 +133,38 @@ def _union_bbox(elements: list) -> tuple[float, float, float, float] | None:
     )
 
 
-def link_opening(
-    record: dict,
+def link_fields(
+    fields: dict,
+    field_names: tuple[str, ...],
     *,
     supplied_elements: dict[str, str],
     element_rows: dict[str, object],
     stats: LinkStats,
+    zero_tolerance: tuple[str, ...] = ZERO_TOLERANCE_FIELDS,
 ) -> list[LinkedField]:
     """
-    Validate every field of one opening record and compute its confidences.
+    Run the §5.6 gate over one record's fields, whatever the record is.
 
-    ``supplied_elements`` is exactly the set the model was shown for this table —
+    Openings and hardware-set components are different shapes with the same
+    contract: cite a real element, ground the value in it, or be rejected. There
+    is deliberately **one** implementation — a second validation path is a second
+    place for the traceability contract to be quietly weaker (§5.1).
+
+    ``supplied_elements`` is exactly the set the model was shown for this batch —
     not the whole document. Validating against everything would let a model cite a
     real element it never saw.
     """
     settings_obj = get_settings()
-    fields = record.get("fields", {}) or {}
 
     populated = sum(
         1
-        for name in OPENING_FIELDS
+        for name in field_names
         if (fields.get(name) or {}).get("value") not in (None, "")
     )
-    penalty = completeness_penalty(populated, len(OPENING_FIELDS))
+    penalty = completeness_penalty(populated, len(field_names))
 
     linked: list[LinkedField] = []
-    for name in OPENING_FIELDS:
+    for name in field_names:
         emitted = fields.get(name)
         if emitted is None:
             # The model omitted the key entirely. That is an absence, and it is
@@ -210,7 +230,7 @@ def link_opening(
         reason = None
         if verdict.verdict is Verdict.ACCEPT_NULL:
             stats.fields_accepted += 1
-            if name in ZERO_TOLERANCE_FIELDS:
+            if name in zero_tolerance:
                 # A missing rating or handing is a finding that must be confirmed,
                 # never an accepted silence (§5.8).
                 review_state = ReviewState.FLAGGED.value
@@ -222,7 +242,7 @@ def link_opening(
                 review_state = ReviewState.FLAGGED.value
                 reason = f"confidence {confidence.final:.2f} below the {name} floor {floor:.2f}"
                 stats.fields_flagged_low_confidence += 1
-            elif name in ZERO_TOLERANCE_FIELDS and confidence.final is None:
+            elif name in zero_tolerance and confidence.final is None:
                 # No measurable confidence on a zero-tolerance field is not a pass.
                 review_state = ReviewState.FLAGGED.value
                 reason = f"{name} has no measurable confidence; requires confirmation"
@@ -246,6 +266,23 @@ def link_opening(
         )
 
     return linked
+
+
+def link_opening(
+    record: dict,
+    *,
+    supplied_elements: dict[str, str],
+    element_rows: dict[str, object],
+    stats: LinkStats,
+) -> list[LinkedField]:
+    """Validate every field of one opening record (FR-2, §5.6)."""
+    return link_fields(
+        record.get("fields", {}) or {},
+        OPENING_FIELDS,
+        supplied_elements=supplied_elements,
+        element_rows=element_rows,
+        stats=stats,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -355,3 +392,172 @@ def persist_opening(
 
     stats.openings_written += 1
     return opening
+
+
+# ---------------------------------------------------------------------------
+# Cross-schedule resolution (§5.11)
+# ---------------------------------------------------------------------------
+
+def link_component(
+    component: dict,
+    *,
+    supplied_elements: dict[str, str],
+    element_rows: dict[str, object],
+    stats: LinkStats,
+) -> list[LinkedField]:
+    """
+    Validate one hardware-set component through the same gate as an opening.
+
+    Zero-tolerance is empty here on purpose: a rating and a handing are properties
+    of the *opening*, not of a line in a hardware-set definition. Asserting either
+    about a component would invent a certification claim, which is the thing §5.8
+    exists to stop — the opening's constraints are applied at match time instead.
+    """
+    return link_fields(
+        component,
+        COMPONENT_FIELDS,
+        supplied_elements=supplied_elements,
+        element_rows=element_rows,
+        stats=stats,
+        zero_tolerance=(),
+    )
+
+
+def parse_quantity(raw: str | None):
+    """
+    Typed quantity from the raw string, or None.
+
+    Deliberately narrow: ``2``, ``2 EA``, ``1.5``. Anything else stays raw and
+    typed-null rather than being coerced — a guessed quantity is a wrong quote
+    line, and ``quantity_raw`` is preserved either way (§5.7).
+    """
+    import re
+    from decimal import Decimal, InvalidOperation
+
+    if not raw:
+        return None
+    match = re.match(r"\s*(\d+(?:\.\d+)?)", raw)
+    if not match:
+        return None
+    try:
+        return Decimal(match.group(1))
+    except InvalidOperation:
+        return None
+
+
+def persist_hardware_set(
+    *,
+    project,
+    extraction_run,
+    hardware_group: str,
+    resolved: bool,
+    explicit_part: bool,
+    components: list[list[LinkedField]],
+    stats: LinkStats,
+) -> list:
+    """
+    Write one resolved set's components, or the record that it did not resolve.
+
+    An unresolved callout still gets a row. "The door schedule references HW-7 and
+    this document never defines it" is a finding the estimator must see and act on;
+    dropping it would leave the opening pointing at a set that silently produces no
+    hardware — the same silent omission NFR-2 forbids everywhere else.
+    """
+    from django.db import transaction
+    from openings.models import FieldProvenance, FieldProvenanceElement, HardwareSetComponent
+
+    stats.hardware_callouts += 1
+    written = []
+
+    with transaction.atomic():
+        if not resolved or not components:
+            stats.hardware_sets_unresolved += 1
+            written.append(
+                HardwareSetComponent.objects.create(
+                    project=project,
+                    extraction_run=extraction_run,
+                    hardware_group=hardware_group,
+                    component_index=0,
+                    resolved=False,
+                    explicit_part=explicit_part,
+                    review_state=ReviewState.FLAGGED.value,
+                    review_notes=(
+                        f"{hardware_group} is called out in the door schedule but its "
+                        f"definition was not found in this document. It has NOT been "
+                        f"filled in from what such a set usually contains (§5.11) — "
+                        f"enter the components, or supply the Division 08 spec section."
+                    ),
+                )
+            )
+            return written
+
+        stats.hardware_sets_resolved += 1
+        index = 0
+        for linked in components:
+            by_name = {item.name: item for item in linked}
+
+            def raw(name: str, _by_name=by_name) -> str | None:
+                item = _by_name.get(name)
+                return item.value if item and item.accepted else None
+
+            description = raw("description")
+            if not description:
+                # Everything about a component keys off what it is. Without a
+                # grounded description there is nothing to match and nothing to quote.
+                log.warning(
+                    "dropping a component of %s with no accepted description", hardware_group
+                )
+                continue
+
+            quantity_raw = raw("quantity")
+            component = HardwareSetComponent.objects.create(
+                project=project,
+                extraction_run=extraction_run,
+                hardware_group=hardware_group,
+                component_index=index,
+                resolved=True,
+                explicit_part=explicit_part,
+                description=description,
+                manufacturer=raw("manufacturer"),
+                part_number=raw("part_number"),
+                finish_raw=raw("finish"),
+                quantity_raw=quantity_raw,
+                quantity=parse_quantity(quantity_raw),
+                review_state=(
+                    ReviewState.FLAGGED.value
+                    if any(item.review_state != ReviewState.AUTO.value for item in linked)
+                    else ReviewState.AUTO.value
+                ),
+            )
+            index += 1
+
+            for item in linked:
+                provenance = FieldProvenance.objects.create(
+                    extraction_run=extraction_run,
+                    hardware_component=component,
+                    field_name=item.name,
+                    extracted_value=item.value,
+                    ocr_confidence=item.ocr_confidence,
+                    llm_confidence=item.llm_confidence,
+                    completeness_penalty=item.completeness_penalty,
+                    final_confidence=item.final_confidence,
+                    grounding_score=item.grounding_score,
+                    page_number=item.page_number,
+                    bbox_x_min=item.bbox[0] if item.bbox else None,
+                    bbox_y_min=item.bbox[1] if item.bbox else None,
+                    bbox_x_max=item.bbox[2] if item.bbox else None,
+                    bbox_y_max=item.bbox[3] if item.bbox else None,
+                    review_state=item.review_state,
+                    rejection_reason=item.rejection_reason,
+                )
+                for ordinal, element_id in enumerate(item.element_ids):
+                    FieldProvenanceElement.objects.create(
+                        field_provenance=provenance,
+                        doc_element_id=element_id,
+                        ordinal=ordinal,
+                    )
+
+            stats.hardware_components_written += 1
+            written.append(component)
+
+    return written

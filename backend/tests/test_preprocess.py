@@ -17,8 +17,10 @@ from pipeline.routing import load_routing_table, normalise_for_anchor
 from pipeline.stages.preprocess import (
     BudgetExceeded,
     EncryptedDocument,
+    PreprocessError,
     analyze_document,
-    plan_splits,
+    routed_pages,
+    subset_pdf,
     summarise,
 )
 from shared.enums import ClassMethod, OCRRoute, PageClass, TextLayer
@@ -232,14 +234,12 @@ class TestGuards:
         with pytest.raises(EncryptedDocument):
             analyze_document(buffer.getvalue(), table=table)
 
-    def test_split_offsets_are_recorded_for_global_page_numbers(self, table):
+    def test_only_routed_pages_are_offered_to_ocr(self, table):
         """
-        §4.6: a citation must point at a page number that means something in the
-        original PDF the estimator is looking at.
+        §4 triage is only a cost decision at the moment of submission. A blank
+        five-page document routes nothing, so nothing is submitted.
         """
-        probes = plan_splits(analyze_document(blank_pdf(5), table=table), max_pages=2)
-        assert [p.split_part for p in probes] == [0, 0, 1, 1, 2]
-        assert [p.page_offset for p in probes] == [0, 0, 2, 2, 4]
+        assert routed_pages(analyze_document(blank_pdf(5), table=table)) == []
 
     def test_page_hash_is_stable_and_hex(self, table):
         first = analyze_document(text_pdf("GENERAL NOTES"), table=table)[0]
@@ -256,3 +256,54 @@ class TestSummary:
         assert report["pages"] == 1
         assert report["pages_ocr"] == 1
         assert report["by_route"][OCRRoute.TEXTRACT_TABLES.value] == 1
+
+
+# ---------------------------------------------------------------------------
+# The subset that makes triage cost money instead of describing it (§4.4, B1)
+# ---------------------------------------------------------------------------
+
+class TestOCRSubset:
+    """
+    Triage decides a route per page; Textract bills per page it *processes*. The
+    two only meet at submission, and submitting the source document anyway is a
+    ~23x overspend that no manifest, log line, or cost estimate would reveal —
+    every one of them reports the triaged figure.
+    """
+
+    def _pages_of(self, data: bytes) -> int:
+        with pymupdf.open(stream=data, filetype="pdf") as doc:
+            return doc.page_count
+
+    def test_subset_contains_only_the_requested_pages(self):
+        subset = subset_pdf(blank_pdf(65), [15])
+        assert self._pages_of(subset) == 1
+
+    def test_subset_preserves_order_and_content(self):
+        source = _pdf(
+            lambda d: [
+                d.new_page(width=612, height=792).insert_text((72, 72), f"PAGE {n}")
+                for n in range(1, 6)
+            ]
+        )
+        with pymupdf.open(stream=subset_pdf(source, [4, 2]), filetype="pdf") as doc:
+            # select() honours the order it is given, so the map back is the
+            # order the caller passed — which is why routed_pages() sorts.
+            assert [page.get_text().strip() for page in doc] == ["PAGE 4", "PAGE 2"]
+
+    def test_routed_pages_are_sorted_because_that_ordering_is_the_page_map(self, table):
+        probes = analyze_document(
+            _pdf(
+                lambda d: [
+                    d.new_page(width=612, height=792).insert_text(
+                        (72, 72), "DOOR SCHEDULE " + "x " * 90
+                    )
+                    for _ in range(3)
+                ]
+            ),
+            table=table,
+        )
+        assert routed_pages(probes) == sorted(routed_pages(probes))
+
+    def test_an_empty_subset_is_refused_rather_than_submitted(self):
+        with pytest.raises(PreprocessError):
+            subset_pdf(blank_pdf(3), [])
