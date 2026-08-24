@@ -1792,6 +1792,121 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/hardware-components/:
+    get:
+      operationId: hardware_components_list
+      description: |-
+        Resolved hardware-set components (§5.11).
+
+        Read-only: a component is what the Division 08 spec section says, and editing
+        it here would break its provenance chain. Correcting one is an edit to the
+        *quote line* it produced, which is where FR-9 puts every other estimator
+        correction and where the FR-13 feedback row is written.
+
+        Filter by ``resolved=false`` to see the callouts the system refused to invent.
+      parameters:
+      - in: query
+        name: extraction_run
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: hardware_group
+        schema:
+          type: string
+      - name: ordering
+        required: false
+        in: query
+        description: Which field to use when ordering the results.
+        schema:
+          type: string
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: project
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: resolved
+        schema:
+          type: boolean
+      - in: query
+        name: review_state
+        schema:
+          type: string
+          enum:
+          - AUTO
+          - CONFIRMED
+          - CORRECTED
+          - FLAGGED
+          - REJECTED
+        description: |-
+          * `AUTO` - AUTO
+          * `FLAGGED` - FLAGGED
+          * `CONFIRMED` - CONFIRMED
+          * `CORRECTED` - CORRECTED
+          * `REJECTED` - REJECTED
+      - name: search
+        required: false
+        in: query
+        description: A search term.
+        schema:
+          type: string
+      tags:
+      - hardware-components
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHardwareSetComponentList'
+          description: ''
+  /api/hardware-components/{id}/:
+    get:
+      operationId: hardware_components_retrieve
+      description: |-
+        Resolved hardware-set components (§5.11).
+
+        Read-only: a component is what the Division 08 spec section says, and editing
+        it here would break its provenance chain. Correcting one is an edit to the
+        *quote line* it produced, which is where FR-9 puts every other estimator
+        correction and where the FR-13 feedback row is written.
+
+        Filter by ``resolved=false`` to see the callouts the system refused to invent.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this hardware set component.
+        required: true
+      tags:
+      - hardware-components
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HardwareSetComponent'
+          description: ''
   /api/health/:
     get:
       operationId: health_retrieve
@@ -3805,6 +3920,41 @@ paths:
               schema:
                 $ref: '#/components/schemas/Quote'
           description: ''
+  /api/quotes/{id}/generate-lines/:
+    post:
+      operationId: quotes_generate_lines_create
+      description: One line per opening, each door's hardware set immediately beneath
+        it, a restroom-accessories block, and a freight line that renders TBD. The
+        pipeline already does this when matching completes; this endpoint is the regenerate
+        action for after an estimator changes which matches are accepted. Refuses
+        to overwrite existing generated lines unless replace=true, and never touches
+        hand-added ones.
+      summary: Build this quote's lines from the project's matched openings (FR-7)
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this quote.
+        required: true
+      - in: query
+        name: replace
+        schema:
+          type: boolean
+        description: Rebuild generated lines.
+      tags:
+      - quotes
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Quote'
+          description: ''
   /api/quotes/{id}/recalculate/:
     post:
       operationId: quotes_recalculate_create
@@ -5379,12 +5529,6 @@ components:
           nullable: true
           description: An estimator overrode the routing decision — 'read page 47
             anyway' (Risk R12).
-        split_part:
-          type: integer
-          readOnly: true
-        page_offset:
-          type: integer
-          readOnly: true
       required:
       - class_confidence
       - class_method
@@ -5398,13 +5542,11 @@ components:
       - page_class
       - page_hash
       - page_number
-      - page_offset
       - raster_url
       - rotation
       - route_reason
       - skip_reason
       - skipped
-      - split_part
       - text_layer
       - thumb_url
       - vector_path_count
@@ -5523,6 +5665,24 @@ components:
           type: number
           format: double
           readOnly: true
+        hardware_callouts:
+          type: integer
+          readOnly: true
+          description: Distinct hardware-group callouts found in the door schedule.
+        hardware_sets_resolved:
+          type: integer
+          readOnly: true
+        hardware_sets_unresolved:
+          type: integer
+          readOnly: true
+          description: Callout present, definition not in the document. Never guessed.
+        hardware_components_written:
+          type: integer
+          readOnly: true
+        hardware_resolution_rate:
+          type: number
+          format: double
+          readOnly: true
         created_at:
           type: string
           format: date-time
@@ -5541,6 +5701,11 @@ components:
       - fields_null_with_citation
       - fields_rejected_citation
       - fields_rejected_grounding
+      - hardware_callouts
+      - hardware_components_written
+      - hardware_resolution_rate
+      - hardware_sets_resolved
+      - hardware_sets_unresolved
       - id
       - schema_repair_retries
       - updated_at
@@ -6065,6 +6230,102 @@ components:
         * `RH` - RH
         * `LHR` - LHR
         * `RHR` - RHR
+    HardwareSetComponent:
+      type: object
+      description: |-
+        One component of a resolved hardware set (§5.11).
+
+        ``resolved=False`` rows are returned like any other. A callout the system
+        could not resolve is a finding the estimator has to act on, and hiding it
+        would leave the opening pointing at a set that silently produces no lines.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        project:
+          type: string
+          format: uuid
+          readOnly: true
+        extraction_run:
+          type: string
+          format: uuid
+          readOnly: true
+        hardware_group:
+          type: string
+          readOnly: true
+          description: The callout as written, e.g. 'HW-3'.
+        component_index:
+          type: integer
+          readOnly: true
+          default: 0
+          description: Order within the set, as the specification lists it.
+        resolved:
+          type: boolean
+          readOnly: true
+          description: False when the callout appears in the door schedule but its
+            definition is not in this document. Never filled in from general knowledge
+            (§5.11).
+        explicit_part:
+          type: boolean
+          readOnly: true
+          description: The architect named a manufacturer part or series instead of
+            a set. Not a resolution failure — the normal case (§1.3).
+        description:
+          type: string
+          readOnly: true
+        manufacturer:
+          type: string
+          readOnly: true
+          nullable: true
+        part_number:
+          type: string
+          readOnly: true
+          nullable: true
+        finish_raw:
+          type: string
+          readOnly: true
+          nullable: true
+        quantity_raw:
+          type: string
+          readOnly: true
+          nullable: true
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,8}(?:\.\d{0,2})?$
+          readOnly: true
+          nullable: true
+          description: Parsed from quantity_raw. Null when the source did not state
+            one.
+        review_state:
+          $ref: '#/components/schemas/ReviewStateEnum'
+        review_notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - component_index
+      - created_at
+      - description
+      - explicit_part
+      - extraction_run
+      - finish_raw
+      - hardware_group
+      - id
+      - manufacturer
+      - part_number
+      - project
+      - quantity
+      - quantity_raw
+      - resolved
+      - updated_at
     LineGroupEnum:
       enum:
       - DOOR
@@ -6174,6 +6435,16 @@ components:
           type: string
           format: uuid
           readOnly: true
+        hardware_component:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+          description: Null for the door itself; set for one component of the hardware
+            set that opening calls for (§5.11). The opening is recorded either way,
+            because the rating and handing hard constraints belong to the opening
+            — the same HW-3 on a 90-minute door and on an unrated one are not the
+            same match.
         catalog_item:
           type: string
           format: uuid
@@ -6253,6 +6524,7 @@ components:
       - finish_ok
       - finish_score
       - handing_ok
+      - hardware_component
       - id
       - match_confidence
       - opening
@@ -6758,6 +7030,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FinishCode'
+    PaginatedHardwareSetComponentList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/HardwareSetComponent'
     PaginatedMarginBandList:
       type: object
       required:
@@ -8155,6 +8450,13 @@ components:
           allOf:
           - $ref: '#/components/schemas/CatalogItem'
           readOnly: true
+        hardware_component:
+          type: string
+          format: uuid
+          nullable: true
+          description: Set when this line came from resolving the opening's hardware-set
+            callout (§5.11). Hardware is most of a real CBC quote, and this is the
+            link that carries an HW-3 line back to the spec text that defined it.
         line_group:
           $ref: '#/components/schemas/LineGroupEnum'
         description:

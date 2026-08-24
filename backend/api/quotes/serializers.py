@@ -15,6 +15,7 @@ class QuoteLineSerializer(serializers.ModelSerializer):
         model = QuoteLine
         fields = [
             "id", "quote", "opening", "match", "catalog_item", "catalog_item_detail",
+            "hardware_component",
             "line_group", "description", "unit", "line_order",
             "quantity", "our_cost", "margin_pct",
             "cost_source", "cost_effective_date", "cost_is_stale", "p21_reference",

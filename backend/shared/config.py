@@ -239,6 +239,7 @@ class Settings:
     bedrock_model_id_cheap: str | None
     extraction_prompt_version: str
     locate_prompt_version: str
+    hardware_prompt_version: str
     bedrock_max_tokens: int
     bedrock_temperature: float
     bedrock_top_p: float
@@ -252,7 +253,6 @@ class Settings:
     # -- preprocessing (§4) ----------------------------------------------
     ocr_route_config: str
     max_ocr_cost_per_document_usd: Decimal
-    split_max_pages: int
     raster_max_long_edge_px: int
 
     # -- matching (§6.1) -------------------------------------------------
@@ -439,8 +439,9 @@ def _build() -> Settings:
         # Deliberately None-able: resolved at deploy, never hardcoded (C5).
         bedrock_model_id=env_str("BEDROCK_MODEL_ID", None),
         bedrock_model_id_cheap=env_str("BEDROCK_MODEL_ID_CHEAP", None),
-        extraction_prompt_version=env_str("EXTRACTION_PROMPT_VERSION", "v1"),
+        extraction_prompt_version=env_str("EXTRACTION_PROMPT_VERSION", "v2"),
         locate_prompt_version=env_str("LOCATE_PROMPT_VERSION", "v1"),
+        hardware_prompt_version=env_str("HARDWARE_PROMPT_VERSION", "v1"),
         bedrock_max_tokens=env_int("BEDROCK_MAX_TOKENS", 8192),
         # temperature=0 is a correctness requirement, not a tuning knob (§5.4):
         # an extraction that cannot be reproduced cannot be audited.
@@ -455,7 +456,6 @@ def _build() -> Settings:
         grounding_min_ratio=env_int("GROUNDING_MIN_RATIO", 90),
         ocr_route_config=env_str("OCR_ROUTE_CONFIG", "config/ocr_routes.json"),
         max_ocr_cost_per_document_usd=env_decimal("MAX_OCR_COST_PER_DOCUMENT_USD", "2.00"),
-        split_max_pages=env_int("SPLIT_MAX_PAGES", 1000),
         raster_max_long_edge_px=env_int("RASTER_MAX_LONG_EDGE_PX", 4000),
         # 3 mirrors the estimator behaviour CBC validated: "here are 3 close
         # matches - is it one of these?" (§6.1)
@@ -516,11 +516,6 @@ def _validate(s: Settings) -> None:
             "MAX_OCR_COST_PER_DOCUMENT_USD must be positive — it is the only control "
             "that catches an accidental 3,000-page upload before the money is gone (§10.3)"
         )
-
-    # Textract async accepts 3,000 pages per document; splitting well under that
-    # bounds worst-case retry cost (§4.6).
-    if not 1 <= s.split_max_pages <= 3000:
-        raise ConfigError(f"SPLIT_MAX_PAGES={s.split_max_pages} must be within [1, 3000]")
 
     if s.sqs_max_receive_count < 1:
         raise ConfigError("SQS_MAX_RECEIVE_COUNT must be >= 1 (C6 redrive policy)")

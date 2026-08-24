@@ -124,22 +124,44 @@ class TestElementPathIsPositionalNotBlockId:
 # ---------------------------------------------------------------------------
 
 class TestGlobalPageNumbers:
-    def test_split_offset_is_applied_before_the_row_is_written(self):
-        element = parse_blocks([word("id", "text", page=1)], page_offset=1000)[0]
-        assert element.page_number == 1001
+    """
+    Textract numbers the pages of the subset it was given from 1. Everything the
+    estimator sees — the viewer, the citation, the manifest — is in document-global
+    page numbers. The conversion happens here, once (§4.6 rule 3).
+    """
 
-    def test_offset_appears_in_the_path_so_splits_stay_distinct(self):
-        element = parse_blocks([word("id", "text", page=1)], page_offset=1000)[0]
-        assert element.element_path == "pages/1001/words/0"
+    def test_subset_page_maps_back_to_the_global_page(self):
+        element = parse_blocks([word("id", "text", page=1)], submitted_pages=[15])[0]
+        assert element.page_number == 15
 
-    def test_same_global_page_yields_the_same_path_under_different_splits(self):
+    def test_the_global_page_is_what_lands_in_the_path(self):
+        element = parse_blocks([word("id", "text", page=1)], submitted_pages=[15])[0]
+        assert element.element_path == "pages/15/words/0"
+
+    def test_identity_survives_a_differently_routed_subset(self):
         """
-        Splitting must be idempotent: page 1001 reached as part 1 page 1 or as
-        part 0 page 1001 is the same page and must produce the same identity.
+        Re-running after triage routed a different set of pages must produce the
+        same element identity for the same physical page — that is what keeps
+        citations from being orphaned by a re-run.
         """
-        via_split = parse_blocks([word("a", "x", page=1)], page_offset=1000)[0]
-        via_whole = parse_blocks([word("b", "x", page=1001)], page_offset=0)[0]
-        assert via_split.element_path == via_whole.element_path
+        alone = parse_blocks([word("a", "x", page=1)], submitted_pages=[15])[0]
+        with_neighbour = parse_blocks([word("b", "x", page=2)], submitted_pages=[9, 15])[0]
+        assert alone.element_path == with_neighbour.element_path
+
+    def test_whole_document_submission_passes_pages_through(self):
+        element = parse_blocks([word("id", "text", page=7)])[0]
+        assert element.page_number == 7
+
+    def test_a_page_that_was_never_submitted_is_an_error_not_a_guess(self):
+        """
+        A result page outside the submitted set means the map and the result
+        disagree. Falling back to the local number would write a citation
+        pointing at the wrong sheet — silently.
+        """
+        import pytest
+
+        with pytest.raises(ValueError, match="only 1 pages were submitted"):
+            parse_blocks([word("id", "text", page=2)], submitted_pages=[15])
 
 
 # ---------------------------------------------------------------------------

@@ -96,16 +96,41 @@ def _bbox(geometry: dict) -> tuple[float, float, float, float]:
 
 
 def parse_blocks(
-    blocks: list[dict], *, page_offset: int = 0, part_index: int = 0
+    blocks: list[dict], *, submitted_pages: list[int] | None = None
 ) -> list[NormalisedElement]:
     """
     Flatten Textract blocks into stable, positionally-keyed elements.
 
-    ``page_offset`` converts part-local page numbers back to document-global ones.
-    ``part_index`` is *not* part of ``element_path``: the path is built from the
-    global page index so that re-running after a different split still produces
-    identical element identities.
+    ``submitted_pages`` is the document-global page number of each page that was
+    actually submitted, in submission order — i.e. what
+    :func:`pipeline.stages.preprocess.routed_pages` returned. Textract numbers the
+    pages of the subset PDF it received from 1, so page *N* of the result is
+    ``submitted_pages[N - 1]`` in the PDF the estimator is looking at.
+
+    Converting here rather than downstream is what §4.6 rule 3 requires: a
+    citation must always point at a page number that means something in the
+    original document. ``element_path`` is built from the **global** index, so
+    re-running against a differently-routed subset still produces identical
+    element identities.
+
+    Omitting the argument means the whole document was submitted, and page
+    numbers pass through unchanged.
     """
+    def global_page(block: dict) -> int:
+        local = int(block.get("Page", 1))
+        if not submitted_pages:
+            return local
+        # Out of range means Textract returned a page we did not submit, which is
+        # not something to paper over with a fallback: it would write a citation
+        # pointing at the wrong sheet.
+        try:
+            return submitted_pages[local - 1]
+        except IndexError:
+            raise ValueError(
+                f"Textract returned page {local} but only {len(submitted_pages)} "
+                f"pages were submitted; the page map and the result disagree."
+            ) from None
+
     # Per-page, per-type counters give each element its positional index.
     counters: dict[tuple[int, str], int] = {}
     # Textract identifies tables by Block.Id, which is unstable across runs; map it
@@ -118,7 +143,7 @@ def parse_blocks(
     # First pass: assign each TABLE block a deterministic per-page ordinal.
     for block in blocks:
         if block.get("BlockType") == "TABLE":
-            page = int(block.get("Page", 1)) + page_offset
+            page = global_page(block)
             ordinal = sum(1 for key in table_ordinals.values() if key == page)
             table_ordinals[block["Id"]] = page
             table_uuids[block["Id"]] = uuid.uuid5(
@@ -141,7 +166,7 @@ def parse_blocks(
         if element_type is None:
             continue
 
-        page_number = int(block.get("Page", 1)) + page_offset
+        page_number = global_page(block)
         key = (page_number, element_type)
         index = counters.get(key, 0)
         counters[key] = index + 1

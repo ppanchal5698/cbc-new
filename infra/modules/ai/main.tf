@@ -96,6 +96,10 @@ data "aws_iam_policy_document" "worker" {
     ]
   }
 
+  # GetObject here is load-bearing beyond the worker's own reads: Textract fetches
+  # the document under the *caller's* credentials, and what it is handed is the
+  # routed-page subset PDF in derived, not the source document (§4.4, B1).
+  # Narrowing this to write-only would break OCR, not just tidy a policy.
   statement {
     sid = "ReadWriteDerived"
     actions = [

@@ -17,7 +17,9 @@ from decimal import Decimal
 import pytest
 from factories import (
     CatalogItemFactory,
+    HardwareSetComponentFactory,
     MarginBandFactory,
+    OpeningFactory,
     ProjectFactory,
     QuoteFactory,
     QuoteLineFactory,
@@ -503,3 +505,62 @@ class TestNoLegacyWeightField:
     def test_unit_weight_is_not_rebuilt(self):
         """§1.5: the legacy truck-loading field is confirmed obsolete."""
         assert not hasattr(QuoteLine, "unit_weight")
+
+
+@pytest.fixture
+def bid():
+    """A matched project: two rated openings sharing HW-3, and a catalogue for them."""
+    from openings.models import HardwareSetComponent  # noqa: F401  (migration guard)
+
+    from pipeline.stages.match import CatalogSnapshot, match_project
+
+    MarginBandFactory(product_type_band="COMMODITY", target_margin_pct=Decimal("0.2700"))
+    project = ProjectFactory()
+    first = OpeningFactory(project=project, door_number="101", hardware_group="HW-3")
+    OpeningFactory(
+        project=project,
+        door_number="102",
+        hardware_group="HW-3",
+        extraction_run=first.extraction_run,
+    )
+    HardwareSetComponentFactory(
+        project=project,
+        extraction_run=first.extraction_run,
+        hardware_group="HW-3",
+        component_index=0,
+        description="Full mortise butt hinge",
+        quantity=Decimal("3"),
+    )
+    CatalogItemFactory(
+        sku="RATED-HINGE",
+        description="Full mortise butt hinge",
+        fire_rating_minutes=90,
+        list_price=Decimal("38.00"),
+    )
+    match_project(project, snapshot=CatalogSnapshot.load())
+    return project
+
+
+class TestGenerateLinesEndpoint:
+    """
+    The regenerate action (FR-7). The pipeline already builds the draft when
+    matching completes; this is what an estimator calls after changing which
+    matches they accept.
+    """
+
+    def test_generate_lines_populates_an_empty_quote(self, bid, auth_client):
+        quote = QuoteFactory(project=bid)
+        response = auth_client.post(f"/api/quotes/{quote.id}/generate-lines/")
+        assert response.status_code == 200
+        assert quote.lines.count() > 0
+
+    def test_a_second_call_conflicts_rather_than_overwriting(self, bid, auth_client):
+        quote = QuoteFactory(project=bid)
+        auth_client.post(f"/api/quotes/{quote.id}/generate-lines/")
+        assert auth_client.post(f"/api/quotes/{quote.id}/generate-lines/").status_code == 409
+
+    def test_replace_query_parameter_rebuilds(self, bid, auth_client):
+        quote = QuoteFactory(project=bid)
+        auth_client.post(f"/api/quotes/{quote.id}/generate-lines/")
+        response = auth_client.post(f"/api/quotes/{quote.id}/generate-lines/?replace=true")
+        assert response.status_code == 200

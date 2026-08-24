@@ -14,7 +14,14 @@ Two shapes exist for provenance on purpose (bottleneck B12):
 
 from rest_framework import serializers
 
-from .models import DocElement, ExtractionRun, FieldProvenance, Match, Opening
+from .models import (
+    DocElement,
+    ExtractionRun,
+    FieldProvenance,
+    HardwareSetComponent,
+    Match,
+    Opening,
+)
 
 
 class DocElementSerializer(serializers.ModelSerializer):
@@ -120,7 +127,7 @@ class MatchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Match
         fields = [
-            "id", "opening", "catalog_item", "catalog_vendor", "catalog_sku",
+            "id", "opening", "hardware_component", "catalog_item", "catalog_vendor", "catalog_sku",
             "catalog_description", "rank", "match_confidence", "status",
             "rating_ok", "handing_ok", "division_ok", "finish_ok",
             "finish_score", "size_score", "vendor_score", "stock_score",
@@ -129,6 +136,26 @@ class MatchSerializer(serializers.ModelSerializer):
         read_only_fields = [
             f for f in fields if f not in ("status", "is_direct_equal", "substitution_note")
         ]
+
+
+class HardwareSetComponentSerializer(serializers.ModelSerializer):
+    """
+    One component of a resolved hardware set (§5.11).
+
+    ``resolved=False`` rows are returned like any other. A callout the system
+    could not resolve is a finding the estimator has to act on, and hiding it
+    would leave the opening pointing at a set that silently produces no lines.
+    """
+
+    class Meta:
+        model = HardwareSetComponent
+        fields = [
+            "id", "project", "extraction_run", "hardware_group", "component_index",
+            "resolved", "explicit_part", "description", "manufacturer", "part_number",
+            "finish_raw", "quantity_raw", "quantity", "review_state", "review_notes",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = [f for f in fields if f not in ("review_state", "review_notes")]
 
 
 class OpeningSerializer(serializers.ModelSerializer):

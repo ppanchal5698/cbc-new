@@ -20,13 +20,21 @@ from rest_framework.response import Response
 
 from shared.enums import FeedbackEntity, ReviewState
 
-from .models import DocElement, ExtractionRun, FieldProvenance, Match, Opening
+from .models import (
+    DocElement,
+    ExtractionRun,
+    FieldProvenance,
+    HardwareSetComponent,
+    Match,
+    Opening,
+)
 from .serializers import (
     DocElementSerializer,
     ExtractionRunSerializer,
     FieldProvenanceDetailSerializer,
     FieldProvenanceGridSerializer,
     FieldProvenanceOverrideSerializer,
+    HardwareSetComponentSerializer,
     MatchSerializer,
     OpeningSerializer,
     SourceRegionSerializer,
@@ -260,3 +268,22 @@ class MatchViewSet(viewsets.ReadOnlyModelViewSet):
                 reason=request.data.get("reason", ""),
             )
         return Response(MatchSerializer(match).data)
+
+
+class HardwareSetComponentViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Resolved hardware-set components (§5.11).
+
+    Read-only: a component is what the Division 08 spec section says, and editing
+    it here would break its provenance chain. Correcting one is an edit to the
+    *quote line* it produced, which is where FR-9 puts every other estimator
+    correction and where the FR-13 feedback row is written.
+
+    Filter by ``resolved=false`` to see the callouts the system refused to invent.
+    """
+
+    queryset = HardwareSetComponent.objects.select_related("project", "extraction_run").all()
+    serializer_class = HardwareSetComponentSerializer
+    filterset_fields = ["project", "extraction_run", "hardware_group", "resolved", "review_state"]
+    search_fields = ["hardware_group", "description", "manufacturer", "part_number"]
+    ordering_fields = ["hardware_group", "component_index", "created_at"]

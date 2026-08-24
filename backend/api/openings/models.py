@@ -303,6 +303,99 @@ class Opening(TimestampedModel):
         return f"Opening {self.door_number}"
 
 
+class HardwareSetComponent(TimestampedModel):
+    """
+    One component of a resolved hardware set (§5.11, FR-4).
+
+    A door schedule says ``HW-3``; the Division 08 spec section defines what
+    ``HW-3`` contains. Joining them is a separate model call with its own narrow
+    context, and this is where its answer lands — one row per component, each with
+    its own ``field_provenance`` citations.
+
+    **An unresolved callout is a row too.** ``resolved=False`` with no components
+    is the honest record that the door schedule referenced a set whose definition
+    is not in this bid set. Filling it in from the model's general knowledge of
+    what an ``HW-3`` usually contains is precisely the failure NFR-2 exists to
+    prevent, so the absence is persisted and flagged instead.
+
+    Deliberately keyed to the *set*, not the opening: one definition serves every
+    door that calls it. The opening-specific part — a rated door needs rated
+    hardware — is applied at match time, where the opening is known (§5.8).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="hardware_components"
+    )
+    extraction_run = models.ForeignKey(
+        ExtractionRun, on_delete=models.CASCADE, related_name="hardware_components"
+    )
+
+    hardware_group = models.CharField(
+        max_length=100, db_index=True, help_text="The callout as written, e.g. 'HW-3'."
+    )
+    component_index = models.IntegerField(
+        default=0, help_text="Order within the set, as the specification lists it."
+    )
+
+    resolved = models.BooleanField(
+        default=False,
+        help_text=(
+            "False when the callout appears in the door schedule but its definition "
+            "is not in this document. Never filled in from general knowledge (§5.11)."
+        ),
+    )
+    explicit_part = models.BooleanField(
+        default=False,
+        help_text=(
+            "The architect named a manufacturer part or series instead of a set. "
+            "Not a resolution failure — the normal case (§1.3)."
+        ),
+    )
+
+    # Raw strings, exactly as the specification wrote them. The model does not
+    # normalise; §5.7 deterministic parsers and the matcher own interpretation.
+    description = models.CharField(max_length=255, blank=True, default="")
+    manufacturer = models.CharField(max_length=255, null=True, blank=True)
+    part_number = models.CharField(max_length=255, null=True, blank=True)
+    finish_raw = models.CharField(max_length=100, null=True, blank=True)
+    quantity_raw = models.CharField(max_length=50, null=True, blank=True)
+    quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Parsed from quantity_raw. Null when the source did not state one.",
+    )
+
+    review_state = models.CharField(
+        max_length=50, choices=ReviewState.choices(), default=ReviewState.AUTO.value, db_index=True
+    )
+    review_notes = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["extraction_run", "hardware_group", "component_index"],
+                name="uniq_hardware_component_per_run",
+            ),
+            # An unresolved callout has nothing to describe. Enforced in the
+            # database because "we could not find this set" is the claim the
+            # estimator acts on.
+            models.CheckConstraint(
+                condition=models.Q(resolved=True) | models.Q(description=""),
+                name="ck_unresolved_component_has_no_description",
+            ),
+        ]
+        indexes = [models.Index(fields=["project", "hardware_group"])]
+        ordering = ["hardware_group", "component_index"]
+
+    def __str__(self) -> str:
+        if not self.resolved:
+            return f"{self.hardware_group} (unresolved)"
+        return f"{self.hardware_group}: {self.description}"
+
+
 class FieldProvenance(TimestampedModel):
     """
     Field to source elements, with composite confidence (§7.2).
@@ -325,6 +418,18 @@ class FieldProvenance(TimestampedModel):
         blank=True,
         related_name="provenance",
         help_text="Nullable so non-opening extractions reuse the same mechanism.",
+    )
+    hardware_component = models.ForeignKey(
+        "HardwareSetComponent",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="provenance",
+        help_text=(
+            "Set instead of ``opening`` for a hardware-set component (§5.11). Cross-"
+            "schedule resolution runs through the same validation gate and the same "
+            "provenance chain as opening extraction — there is only one contract."
+        ),
     )
     field_name = models.CharField(max_length=100, db_index=True)
     extracted_value = models.TextField(
@@ -440,6 +545,19 @@ class Match(TimestampedModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     opening = models.ForeignKey(Opening, on_delete=models.CASCADE, related_name="matches")
+    hardware_component = models.ForeignKey(
+        HardwareSetComponent,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="matches",
+        help_text=(
+            "Null for the door itself; set for one component of the hardware set that "
+            "opening calls for (§5.11). The opening is recorded either way, because "
+            "the rating and handing hard constraints belong to the opening — the same "
+            "HW-3 on a 90-minute door and on an unrated one are not the same match."
+        ),
+    )
     catalog_item = models.ForeignKey(
         "catalog.CatalogItem", on_delete=models.CASCADE, related_name="matches"
     )
@@ -482,13 +600,21 @@ class Match(TimestampedModel):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["opening", "catalog_item"], name="uniq_match_pair")
+            # nulls_distinct=False so the door line (hardware_component IS NULL)
+            # still collides with itself; without it Postgres treats every NULL as
+            # unique and the constraint stops constraining the case it was written for.
+            models.UniqueConstraint(
+                fields=["opening", "hardware_component", "catalog_item"],
+                name="uniq_match_pair",
+                nulls_distinct=False,
+            )
         ]
         indexes = [
             models.Index(fields=["opening", "rank"]),
             models.Index(fields=["opening", "status"]),
+            models.Index(fields=["hardware_component", "rank"]),
         ]
-        ordering = ["opening", "rank"]
+        ordering = ["opening", "hardware_component", "rank"]
 
     def __str__(self) -> str:
         return f"#{self.rank} {self.catalog_item_id} ({self.match_confidence:.2f})"
