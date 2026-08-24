@@ -201,16 +201,30 @@ EXTRACTABLE = {"DOOR_SCHEDULE", "FRAME_SCHEDULE"}
 
 
 def locate_tables(batches: list[TableBatch], *, model_id: str, version: str) -> dict[str, str]:
+    """Classifications only. See :func:`locate_tables_with_status`."""
+    return locate_tables_with_status(batches, model_id=model_id, version=version)[0]
+
+
+def locate_tables_with_status(
+    batches: list[TableBatch], *, model_id: str, version: str
+) -> tuple[dict[str, str], bool]:
     """
-    Classify tables on the cheap tier. Returns ``{table_id: classification}``.
+    Classify tables on the cheap tier.
+
+    Returns ``({table_id: classification}, located)`` where ``located`` is False
+    when the pass failed and the fallback was used.
 
     A failure here is not fatal: falling back to "extract everything" costs more
     but loses nothing, whereas failing the document would lose the bid set over a
     classification call. Recall is weighted far above precision throughout triage
     and this is the same trade (Risk R12).
+
+    The caller needs to know which happened, though. "Ninety-five tables to
+    extract" means something different when the classifier chose them than when
+    it fell over, and only the second is a reason to stop and ask.
     """
     if not batches:
-        return {}
+        return {}, True
 
     inventory = [batch.inventory_entry() for batch in batches]
     system, messages = bedrock.build_messages(
@@ -228,7 +242,7 @@ def locate_tables(batches: list[TableBatch], *, model_id: str, version: str) -> 
         )
     except Exception as exc:  # noqa: BLE001 - degrade, never drop the document
         log.warning("locate pass failed (%s); extracting every table instead", exc)
-        return {batch.table_id: "DOOR_SCHEDULE" for batch in batches}
+        return {batch.table_id: "DOOR_SCHEDULE" for batch in batches}, False
 
     result = {
         entry["table_id"]: entry["classification"]
@@ -249,7 +263,7 @@ def locate_tables(batches: list[TableBatch], *, model_id: str, version: str) -> 
             "cache_read_tokens": response.cache_read_tokens,
         },
     )
-    return result
+    return result, True
 
 
 # ---------------------------------------------------------------------------

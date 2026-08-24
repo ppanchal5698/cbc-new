@@ -240,6 +240,7 @@ class Settings:
     extraction_prompt_version: str
     locate_prompt_version: str
     hardware_prompt_version: str
+    max_extract_tables_per_document: int
     bedrock_max_tokens: int
     bedrock_temperature: float
     bedrock_top_p: float
@@ -442,6 +443,7 @@ def _build() -> Settings:
         extraction_prompt_version=env_str("EXTRACTION_PROMPT_VERSION", "v2"),
         locate_prompt_version=env_str("LOCATE_PROMPT_VERSION", "v1"),
         hardware_prompt_version=env_str("HARDWARE_PROMPT_VERSION", "v1"),
+        max_extract_tables_per_document=env_int("MAX_EXTRACT_TABLES_PER_DOCUMENT", 40),
         bedrock_max_tokens=env_int("BEDROCK_MAX_TOKENS", 8192),
         # temperature=0 is a correctness requirement, not a tuning knob (§5.4):
         # an extraction that cannot be reproduced cannot be audited.
@@ -515,6 +517,11 @@ def _validate(s: Settings) -> None:
         raise ConfigError(
             "MAX_OCR_COST_PER_DOCUMENT_USD must be positive — it is the only control "
             "that catches an accidental 3,000-page upload before the money is gone (§10.3)"
+        )
+
+    if s.max_extract_tables_per_document < 1:
+        raise ConfigError(
+            f"MAX_EXTRACT_TABLES_PER_DOCUMENT={s.max_extract_tables_per_document} must be >= 1"
         )
 
     if s.sqs_max_receive_count < 1:

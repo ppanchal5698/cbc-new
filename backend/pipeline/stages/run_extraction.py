@@ -27,6 +27,77 @@ from shared.enums import ExtractionRunStatus, PipelineStage
 log = logging.getLogger("cbc.extraction")
 
 
+
+class TableBudgetExceeded(RuntimeError):
+    """More tables would be sent to the premium model than the guard allows."""
+
+
+def _assert_within_table_budget(count: int, located: bool, ceiling: int) -> None:
+    """
+    Refuse before spending, the way preprocessing already refuses (§10.3 item 8).
+
+    The locate pass degrades to "extract every table" when it fails, which is the
+    right call for recall — a false positive costs one call, a false negative
+    costs a missing opening (Risk R12). It is also completely unbounded: a
+    95-table plan set becomes 95 premium-model calls, and SQS will redeliver.
+
+    So the fallback needs the ceiling preprocessing already has. Quarantining
+    beats extracting the first forty, because a silently partial read is exactly
+    the omission NFR-2 forbids — the estimator would see openings and have no way
+    to know the rest were never looked at.
+    """
+    if count <= ceiling:
+        return
+
+    why = (
+        "the locate pass failed, so every table was queued for extraction"
+        if not located
+        else "this document genuinely carries that many schedule tables"
+    )
+    raise TableBudgetExceeded(
+        f"{count} tables would be sent to the premium model, over the "
+        f"{ceiling}-table guard — {why}. Nothing has been spent. Raise "
+        f"MAX_EXTRACT_TABLES_PER_DOCUMENT deliberately, or check why the routing "
+        f"table classified this many pages as schedules."
+    )
+
+
+def _cached_extractions(document, prompt_version: str) -> dict:
+    """Answers already paid for on an earlier delivery, by table id."""
+    from openings.models import TableExtraction
+
+    return {
+        row.table_id: row
+        for row in TableExtraction.objects.filter(
+            document=document, prompt_version=prompt_version
+        )
+    }
+
+
+def _remember_extraction(document, table_id, prompt_version, model_id, payload, response) -> None:
+    """
+    Record one table's answer so a redelivery reuses it.
+
+    ``update_or_create`` rather than ``create``: two workers racing the same
+    redelivered message would otherwise collide on the unique constraint and turn
+    a cost optimisation into an outage.
+    """
+    from openings.models import TableExtraction
+
+    TableExtraction.objects.update_or_create(
+        document=document,
+        table_id=table_id,
+        prompt_version=prompt_version,
+        defaults={
+            "model_id": model_id,
+            "payload": payload,
+            "input_tokens": getattr(response, "input_tokens", 0) or 0,
+            "output_tokens": getattr(response, "output_tokens", 0) or 0,
+            "cached_input_tokens": getattr(response, "cache_read_tokens", 0) or 0,
+        },
+    )
+
+
 def run(document) -> dict:
     """
     Two-pass extraction over one document, then validation and persistence.
@@ -84,7 +155,7 @@ def run(document) -> dict:
             return stats.as_dict()
 
         with timed("EXTRACT", log):
-            classifications = extract_stage.locate_tables(
+            classifications, located = extract_stage.locate_tables_with_status(
                 batches, model_id=cheap, version=settings_obj.locate_prompt_version
             )
             extractable = [
@@ -93,18 +164,39 @@ def run(document) -> dict:
             ]
             log.info(
                 "pass A complete",
-                extra={"tables_total": len(batches), "tables_extractable": len(extractable)},
+                extra={
+                    "tables_total": len(batches),
+                    "tables_extractable": len(extractable),
+                    "locate_succeeded": located,
+                },
             )
+
+            _assert_within_table_budget(
+                len(extractable), located, settings_obj.max_extract_tables_per_document
+            )
+
+            prompt_version = settings_obj.extraction_prompt_version
+            cache = _cached_extractions(document, prompt_version)
 
             records: list[tuple[dict, dict]] = []
             for batch in extractable:
-                openings, response = extract_stage.extract_table(
-                    batch, model_id=premium, version=settings_obj.extraction_prompt_version
-                )
-                if response is not None:
-                    tokens_in += response.input_tokens
-                    tokens_out += response.output_tokens
-                    cached_in += response.cache_read_tokens
+                cached = cache.get(batch.table_id)
+                if cached is not None:
+                    # Already answered on an earlier delivery. Reusing it is the
+                    # whole point of B8: a retry storm cannot double-bill.
+                    openings = cached.payload
+                    cached_in += cached.cached_input_tokens
+                else:
+                    openings, response = extract_stage.extract_table(
+                        batch, model_id=premium, version=prompt_version
+                    )
+                    _remember_extraction(
+                        document, batch.table_id, prompt_version, premium, openings, response
+                    )
+                    if response is not None:
+                        tokens_in += response.input_tokens
+                        tokens_out += response.output_tokens
+                        cached_in += response.cache_read_tokens
                 for record in openings:
                     records.append((record, batch.elements))
 
