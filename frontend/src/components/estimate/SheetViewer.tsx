@@ -22,7 +22,7 @@
  * carried on the payload so the mismatch is visible if that ever changes.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useForceRead, useManifest } from "@/lib/documents";
 import type { SourceRegion } from "@/lib/openings";
 import type { Document, DocumentManifest } from "@/lib/schema";
@@ -46,11 +46,20 @@ export function SheetViewer({
   const { data: pages } = useManifest(activeDocumentId);
   const [zoomIndex, setZoomIndex] = useState(2);
   const [page, setPage] = useState(1);
+  const [tracedPage, setTracedPage] = useState<number | null>(null);
 
-  // Following a citation moves the viewer to that page.
-  useEffect(() => {
-    if (region?.page_number) setPage(region.page_number);
-  }, [region?.page_number]);
+  // Following a citation moves the viewer to that page — adjusted during render
+  // rather than in an effect, which is React's own pattern for "reset state when
+  // a prop changes". An effect would render the old page first and then correct
+  // itself, which is a visible flash on the screen estimators click most.
+  //
+  // Comparing against the last citation honoured is what keeps the strip usable:
+  // picking a page by hand while a field is traced must not be overruled on the
+  // next render.
+  if (region?.page_number !== undefined && region.page_number !== tracedPage) {
+    setTracedPage(region.page_number);
+    setPage(region.page_number);
+  }
 
   const current = useMemo(
     () => (pages ?? []).find((p) => p.page_number === page) ?? (pages ?? [])[0],

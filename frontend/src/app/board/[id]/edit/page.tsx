@@ -8,7 +8,7 @@
  */
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { DateInput } from "@/components/form/DateInput";
 import { AppShell } from "@/components/shell/AppShell";
 import { RequireAuth } from "@/components/shell/RequireAuth";
@@ -63,8 +63,16 @@ function EditEstimate() {
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
 
-  useEffect(() => {
-    if (!project) return;
+  // Fill the form once, when the project arrives — adjusted during render rather
+  // than in an effect, which is React's own pattern for resetting state as a
+  // prop changes and avoids a first paint showing empty fields.
+  //
+  // Keyed on the id, not on the object: the query refetches after any mutation,
+  // and re-filling on every refetch would wipe whatever the estimator had
+  // half-typed.
+  const [loadedId, setLoadedId] = useState<string | null>(null);
+  if (project && project.id !== loadedId) {
+    setLoadedId(project.id);
     setForm({
       name: project.name ?? "",
       source_channel: project.source_channel ?? "EMAIL",
@@ -76,7 +84,7 @@ function EditEstimate() {
       rfp_body_text: project.rfp_body_text ?? "",
       outcome: project.outcome ?? "",
     });
-  }, [project]);
+  }
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));

@@ -77,9 +77,10 @@ calibrate:  ## Per-field confidence threshold curve for CBC to pick an operating
 cost-report:  ## Per-bid-set AWS cost attribution from live tables (§10.3)
 	$(PIPE) python ops/scripts/cost_report.py
 
-lint:  ## ruff across the whole backend, and tsc across the frontend
+lint:  ## ruff across the backend; tsc and eslint across the frontend
 	$(RUFF) check .
 	$(WEB) npx tsc --noEmit
+	$(WEB) npm run lint
 
 format:  ## Apply ruff autofixes
 	$(RUFF) check --fix .

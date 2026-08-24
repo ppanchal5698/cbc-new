@@ -56,43 +56,52 @@ function Proposal() {
   const { data: project } = useProject(id);
   const { data: me } = useMe();
 
-  // Follow the quote only while a render is outstanding. Polling forever would
-  // hammer the API for a value that changes about once per bid.
-  const [awaiting, setAwaiting] = useState(false);
-  const { data: quote } = useQuote(id, { poll: awaiting });
-  const exportQuote = useExportQuote(id);
+  // When the render was asked for, or null if we have not asked this session.
+  const [requestedAt, setRequestedAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Everything below is derived from those two, deliberately. The render is
+  // enqueued rather than done on the request thread (bottleneck B14), so the
+  // answer lands on a later read — and an effect mirroring "am I still waiting"
+  // into state would render one frame claiming the opposite.
+  const { data: quote } = useQuote(id, { poll: requestedAt !== null });
+  const exportQuote = useExportQuote(id);
 
   const sent = Boolean(quote?.exported_at);
+  const elapsed = requestedAt === null ? 0 : now - requestedAt;
+  // A WeasyPrint call on the worker, not a queue that backs up. Past half a
+  // minute it has not been slow, it has failed — and saying so beats a spinner
+  // that never resolves.
+  const gaveUp = requestedAt !== null && !sent && elapsed > 30_000;
+  const awaiting = requestedAt !== null && !sent && !gaveUp;
+  const recipient = quote?.exported_to_email || project?.initiator_email || null;
 
+  // The only effect: a clock, so `elapsed` keeps moving between polls. It
+  // synchronises React with something genuinely external rather than copying
+  // state React already has.
   useEffect(() => {
     if (!awaiting) return;
-    if (quote?.exported_at) {
-      setAwaiting(false);
-      return;
-    }
-    // The render is a WeasyPrint call on the worker, not a queue that backs up.
-    // If it has not landed in half a minute it is not slow, it has failed — and
-    // saying so beats a spinner that never resolves.
-    const giveUp = setTimeout(() => {
-      setAwaiting(false);
-      setError(
-        "The proposal was queued but no PDF came back. The render runs on the pipeline worker — " +
-          "check its logs and the dead-letter queue before sending again.",
-      );
-    }, 30_000);
-    return () => clearTimeout(giveUp);
-  }, [awaiting, quote?.exported_at]);
-  const recipient = quote?.exported_to_email || project?.initiator_email || null;
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, [awaiting]);
 
   function onSend() {
     if (!quote) return;
     setError(null);
+    setNow(Date.now());
     exportQuote.mutate(quote.id, {
-      onSuccess: () => setAwaiting(true),
+      onSuccess: () => setRequestedAt(Date.now()),
       onError: (err) => setError(err instanceof ApiError ? err.message : String(err)),
     });
   }
+
+  const notice =
+    error ??
+    (gaveUp
+      ? "The proposal was queued but no PDF came back. The render runs on the pipeline worker — " +
+        "check its logs and the dead-letter queue before sending again."
+      : null);
 
   return (
     <EstimateShell
@@ -140,9 +149,9 @@ function Proposal() {
             </div>
           ) : null}
 
-          {error ? (
+          {notice ? (
             <div role="alert" style={{ width: "100%", minWidth: "700px", maxWidth: "816px", margin: "0 auto 14px", background: "var(--app-neg-soft)", border: "1px solid var(--app-neg-line)", color: "var(--app-neg)", borderRadius: "12px", padding: "11px 14px", fontSize: "12.5px", lineHeight: 1.55 }}>
-              {error}
+              {notice}
             </div>
           ) : null}
 

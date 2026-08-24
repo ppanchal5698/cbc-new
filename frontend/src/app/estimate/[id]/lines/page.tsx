@@ -61,8 +61,14 @@ function Lines() {
 
   const { data: region } = useSourceRegion(tracing ?? undefined);
 
-  const rows = openings ?? [];
-  const needsReview = rows.filter((o) => o.review_state === "FLAGGED" || o.review_state === "REJECTED");
+  // `openings ?? []` is a fresh array on every render, so memoising against it
+  // memoised nothing. Anchoring on the query result itself is what makes the
+  // filter below actually cheap on a 200-opening bid set.
+  const rows = useMemo(() => openings ?? [], [openings]);
+  const needsReview = useMemo(
+    () => rows.filter((o) => o.review_state === "FLAGGED" || o.review_state === "REJECTED"),
+    [rows],
+  );
   const shown = useMemo(() => {
     if (filter === "review") return needsReview;
     if (filter === "clear") return rows.filter((o) => !needsReview.includes(o));
