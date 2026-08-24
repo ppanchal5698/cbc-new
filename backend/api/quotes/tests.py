@@ -295,16 +295,25 @@ class TestAssembly:
         assert quote.grand_total == Decimal("273.97")
 
     def test_groups_get_their_own_subtotals(self):
+        """
+        A block is a CSI section — Division 08 openings, Division 10 specialties.
+
+        Previously this keyed on ``line_group``, which is an internal grouping the
+        screens do not use. Two lines in the same section share a subtotal now,
+        because they are the same block on the sheet.
+        """
         quote = QuoteFactory(tax_jurisdiction=None)
-        for group, cost in [("DOOR", "100.0000"), ("RESTROOM_ACCESSORIES", "50.0000")]:
+        doors_item = CatalogItemFactory(sku="SUB-DOOR", csi_division="08 11 00")
+        accessory_item = CatalogItemFactory(sku="SUB-ACC", csi_division="10 28 00")
+        for item, cost in [(doors_item, "100.0000"), (accessory_item, "50.0000")]:
             QuoteLineFactory(
-                quote=quote, line_group=group, our_cost=Decimal(cost),
+                quote=quote, catalog_item=item, our_cost=Decimal(cost),
                 margin_pct=Decimal("0.2700"), margin_overridden=True,
                 margin_override_reason="fixed",
             )
         assemble_quote(quote, as_of=date(2026, 1, 1))
-        doors = quote.lines.filter(line_group="DOOR").first()
-        accessories = quote.lines.filter(line_group="RESTROOM_ACCESSORIES").first()
+        doors = quote.lines.filter(catalog_item=doors_item).first()
+        accessories = quote.lines.filter(catalog_item=accessory_item).first()
         assert doors.subtotal == Decimal("136.99")
         assert accessories.subtotal == Decimal("68.49")
 
@@ -564,3 +573,56 @@ class TestGenerateLinesEndpoint:
         auth_client.post(f"/api/quotes/{quote.id}/generate-lines/")
         response = auth_client.post(f"/api/quotes/{quote.id}/generate-lines/?replace=true")
         assert response.status_code == 200
+
+
+class TestSubtotalsMatchTheBlocksTheyLabel:
+    """
+    A subtotal is grouped by CSI section, and so are the review screen and the
+    proposal. If the two ever key differently the number still renders — it just
+    describes a different set of lines than the block it sits on, which is worse
+    than no subtotal at all because it looks authoritative.
+    """
+
+    def test_each_section_subtotals_its_own_lines(self):
+        MarginBandFactory(product_type_band="COMMODITY", target_margin_pct=Decimal("0.2700"))
+        quote = QuoteFactory()
+        doors = CatalogItemFactory(sku="DOOR-1", csi_division="08 11 00", list_price=Decimal("100"))
+        grab = CatalogItemFactory(sku="GRAB-1", csi_division="10 28 00", list_price=Decimal("50"))
+
+        QuoteLineFactory(quote=quote, catalog_item=doors, line_group="OTHER",
+                         quantity=Decimal("2"), our_cost=Decimal("100.0000"))
+        QuoteLineFactory(quote=quote, catalog_item=grab, line_group="OTHER",
+                         quantity=Decimal("3"), our_cost=Decimal("50.0000"))
+
+        assemble_quote(quote)
+
+        by_section: dict[str, list] = {}
+        for line in quote.lines.all():
+            by_section.setdefault(line.catalog_item.csi_division, []).append(line)
+
+        assert len(by_section) == 2, "the two sections must not pool into one"
+        for section, lines in by_section.items():
+            summed = sum(line.extended for line in lines)
+            assert lines[0].subtotal == summed, f"{section} subtotal describes other lines"
+
+    def test_two_sections_sharing_a_line_group_do_not_share_a_subtotal(self):
+        """
+        The regression this exists for: subtotals were keyed on `line_group` while
+        the screens grouped by section, so a Division 06 line and a Division 10
+        line both filed under OTHER reported each other's total.
+        """
+        MarginBandFactory(product_type_band="COMMODITY", target_margin_pct=Decimal("0.2700"))
+        quote = QuoteFactory()
+        frp = CatalogItemFactory(sku="FRP-1", csi_division="06 64 00", list_price=Decimal("90"))
+        grab = CatalogItemFactory(sku="GRAB-2", csi_division="10 28 00", list_price=Decimal("50"))
+        QuoteLineFactory(quote=quote, catalog_item=frp, line_group="OTHER",
+                         quantity=Decimal("10"), our_cost=Decimal("90.0000"))
+        QuoteLineFactory(quote=quote, catalog_item=grab, line_group="OTHER",
+                         quantity=Decimal("1"), our_cost=Decimal("50.0000"))
+
+        assemble_quote(quote)
+
+        subtotals = {
+            line.catalog_item.csi_division: line.subtotal for line in quote.lines.all()
+        }
+        assert subtotals["06 64 00"] != subtotals["10 28 00"]

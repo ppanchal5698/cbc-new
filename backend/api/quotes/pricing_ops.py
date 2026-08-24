@@ -319,6 +319,24 @@ def price_line(
 # Step 4 — assembly
 # ---------------------------------------------------------------------------
 
+def _subtotal_key(line) -> str:
+    """
+    Which block a line subtotals under.
+
+    The catalogue's section first and the extracted item's second — the catalogue
+    is the library purchasing maintains, and where the two disagree it wins. A
+    line with neither falls back to its line group so it still lands somewhere
+    rather than pooling with every other unsectioned line.
+    """
+    item = line.catalog_item
+    if item is not None and item.csi_division:
+        return item.csi_division
+    opening = line.opening
+    if opening is not None and opening.csi_division:
+        return opening.csi_division
+    return line.line_group
+
+
 def assemble_quote(quote, *, as_of: date | None = None):
     """
     Group, subtotal, tax, and total one quote (§6.2 step 4, FR-7).
@@ -342,13 +360,26 @@ def assemble_quote(quote, *, as_of: date | None = None):
 
     # Group subtotals, stored on each member line so the rendered PDF and any
     # later audit read the same number the engine computed.
+    #
+    # Keyed on **CSI section**, which is how a quote is read in the trade and how
+    # both the review screen and the proposal group their blocks: Division 08
+    # openings, Division 10 specialties, Division 06 finishes. That also satisfies
+    # FR-7 more exactly than the internal line group did — "grouped by door with
+    # a separate restroom-accessories block" *is* 08 and 10.
+    #
+    # The key has to match what the screens group by or the number is worse than
+    # useless: it looks authoritative and describes a different set of lines.
     subtotals: dict[str, Decimal] = {}
     for line in lines:
         if line.line_group == LineGroup.FREIGHT.value:
             continue
-        subtotals[line.line_group] = subtotals.get(line.line_group, Decimal("0")) + line.extended
+        key = _subtotal_key(line)
+        subtotals[key] = subtotals.get(key, Decimal("0")) + line.extended
     for line in lines:
-        line.subtotal = money(subtotals.get(line.line_group, Decimal("0")))
+        if line.line_group == LineGroup.FREIGHT.value:
+            line.subtotal = Decimal("0.00")
+        else:
+            line.subtotal = money(subtotals.get(_subtotal_key(line), Decimal("0")))
         line.save(update_fields=["subtotal", "updated_at"])
 
     quote.subtotal_sale = money(sum(subtotals.values(), Decimal("0")))
