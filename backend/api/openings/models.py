@@ -716,3 +716,52 @@ class Match(TimestampedModel):
 
     def __str__(self) -> str:
         return f"#{self.rank} {self.catalog_item_id} ({self.match_confidence:.2f})"
+
+
+class TableExtraction(TimestampedModel):
+    """
+    One model call's answer for one table, kept so a retry never re-pays for it.
+
+    §9 B8 requires idempotency keys on OCR **and** LLM calls: "a retry storm
+    cannot double-bill". Textract had one; Bedrock did not.
+
+    It matters because of the shape of the failure. Extraction reads every
+    schedule table into memory and only then links and persists, so a document
+    that fails on its sixtieth table throws away fifty-nine successful calls —
+    and SQS redelivers, and it pays for all fifty-nine again, up to three times.
+
+    Keyed on the prompt version as well as the table, because a prompt change is
+    a different question and its answer is not interchangeable with the old one
+    (§8.2: prompts are versioned artefacts, never edited in place).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(
+        Document, on_delete=models.CASCADE, related_name="table_extractions"
+    )
+    table_id = models.CharField(max_length=64, db_index=True)
+    prompt_version = models.CharField(max_length=32)
+    model_id = models.CharField(
+        max_length=255,
+        help_text="The resolved model that answered. A cached answer is attributable (C5).",
+    )
+
+    payload = models.JSONField(
+        default=list,
+        help_text="The opening records the model returned, exactly as returned.",
+    )
+    input_tokens = models.IntegerField(default=0)
+    output_tokens = models.IntegerField(default=0)
+    cached_input_tokens = models.IntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["document", "table_id", "prompt_version"],
+                name="uniq_table_extraction",
+            )
+        ]
+        indexes = [models.Index(fields=["document", "prompt_version"])]
+
+    def __str__(self) -> str:
+        return f"{self.table_id} @ {self.prompt_version} ({len(self.payload)} records)"

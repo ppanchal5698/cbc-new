@@ -439,33 +439,104 @@ def normalise_document(document, results: dict) -> int:
     # fourteen thousand committed elements, and marking NORMALIZE failed for
     # something EXTRACT did sends whoever reads the job row to the wrong stage —
     # which is the entire value of having per-stage rows.
-    _extract_and_link(document)
-    repo.set_document_status(document, DocumentStatus.PROCESSED)
+    # Only claim PROCESSED if extraction has not already settled the status.
+    # It sets FAILED or QUARANTINED for the failures worth stopping on, and
+    # overwriting that with PROCESSED would put the document back to reading as
+    # finished — the exact misreport the failure branches exist to prevent.
+    if not _extract_and_link(document):
+        repo.set_document_status(document, DocumentStatus.PROCESSED)
     return written
 
 
-def _extract_and_link(document) -> None:
-    """
-    Run EXTRACT and LINK, or record honestly that they were skipped.
+#: Bedrock failures that a later delivery could plausibly get past. Everything
+#: else — bad credentials, no model access, a malformed request — will fail
+#: identically on all three deliveries, so retrying only delays the answer and
+#: fills the dead-letter queue with a question already settled.
+TRANSIENT_BEDROCK_ERRORS = frozenset(
+    {
+        "ThrottlingException",
+        "TooManyRequestsException",
+        "ServiceUnavailableException",
+        "ServiceQuotaExceededException",
+        "ModelTimeoutException",
+        "ModelNotReadyException",
+        "InternalServerException",
+        "RequestTimeout",
+    }
+)
 
-    Bedrock model IDs are resolved at deploy and pinned in SSM (C5); with none
-    pinned there is nothing to invoke. Normalisation has still succeeded and the
-    source viewer works, so the document is not failed — but the skip is written
-    to the job row rather than passing silently, because a document that looks
-    PROCESSED with no openings is exactly the silent omission NFR-2 forbids.
+
+def _extract_and_link(document) -> bool:
     """
+    Run EXTRACT and LINK, or leave the document saying what happened.
+
+    Returns True when this call has already settled the document's status, so the
+    caller does not overwrite it with PROCESSED.
+
+    Three outcomes, and the point of the split is that none of them leaves a
+    document stuck mid-sentence:
+
+    * **Skipped** — no model ID pinned (C5). Normalisation succeeded and the
+      source viewer works, so the document is PROCESSED with the skip written to
+      the job row, because a document that looks finished with no openings is the
+      silent omission NFR-2 forbids.
+    * **Transient** — a throttle or a timeout. Re-raised so SQS redelivers, which
+      is what redelivery is for.
+    * **Permanent** — bad credentials, no model access, over the table guard.
+      The document is FAILED with the reason and the message is *not* retried:
+      three more attempts would fail the same way and land it on the DLQ with a
+      cause already known.
+
+    Before this, anything that was not a ConfigError propagated and nothing set
+    the document's status. It stayed PROCESSING forever, which the UI renders as
+    "Reading" — a spinner over a document whose elements were all written and
+    whose extraction had, in fact, definitively failed.
+    """
+    from botocore.exceptions import BotoCoreError, ClientError
+
     from pipeline.stages import run_extraction
+    from pipeline.stages.run_extraction import TableBudgetExceeded
     from shared.config import ConfigError
+
+    def mark(stage_status: str, detail: str) -> None:
+        for stage in (PipelineStage.EXTRACT, PipelineStage.LINK):
+            job = repo.get_or_create_job(document, stage)
+            if job.status == PipelineJobStatus.COMPLETED.value:
+                continue
+            job.status = stage_status
+            job.error_detail = detail[:4000]
+            job.save(update_fields=["status", "error_detail", "updated_at"])
 
     try:
         run_extraction.run(document)
+        return False
+
     except ConfigError as exc:
-        for stage in (PipelineStage.EXTRACT, PipelineStage.LINK):
-            skipped = repo.get_or_create_job(document, stage)
-            skipped.status = PipelineJobStatus.SKIPPED.value
-            skipped.error_detail = str(exc)[:4000]
-            skipped.save(update_fields=["status", "error_detail", "updated_at"])
+        # Nothing was invoked, but normalisation stands and the viewer works, so
+        # the document is genuinely processed — with the skip on the record.
+        mark(PipelineJobStatus.SKIPPED.value, str(exc))
         log.warning("extraction skipped: %s", exc)
+        return False
+
+    except TableBudgetExceeded as exc:
+        mark(PipelineJobStatus.QUARANTINED.value, str(exc))
+        repo.set_document_status(document, DocumentStatus.QUARANTINED, str(exc))
+        log.error("extraction refused: %s", exc)
+        return True
+
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code in TRANSIENT_BEDROCK_ERRORS:
+            raise
+        detail = f"{code}: {exc}"
+        mark(PipelineJobStatus.FAILED.value, detail)
+        repo.set_document_status(document, DocumentStatus.FAILED, detail)
+        log.error("extraction failed permanently (%s); not retrying", code)
+        return True
+
+    except BotoCoreError:
+        # Connection-level: no endpoint, DNS, TLS. Worth another delivery.
+        raise
 
 
 # ---------------------------------------------------------------------------
