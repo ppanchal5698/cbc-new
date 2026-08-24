@@ -175,7 +175,60 @@ class VendorMultiplier(TimestampedModel):
     )
     effective_date = models.DateField(default=date.today, db_index=True)
 
+    # -- the programme behind the number (Risk R5, NFR-10) --------------------
+    # A multiplier on its own cannot tell an estimator whether to trust it. Risk
+    # R5 is that stale prices quietly drive real quotes, and NFR-10 has no named
+    # owner yet — so the guardrail available today is making the programme's own
+    # dates and owner visible next to the figure they justify.
+    sheet_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="The programme as purchasing refers to it, e.g. 'Hager L3 Program'.",
+    )
+    protected_until = models.DateField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The date CBC's cost is held to. Past it a mid-year list increase "
+            "reaches the quote, so a lapsed protection is a reason to confirm "
+            "before a proposal goes out — not merely a stale date."
+        ),
+    )
+    steward = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Who owns this sheet. Blank is the honest answer while NFR-10 is open.",
+    )
+    reviewed_on = models.DateField(
+        null=True, blank=True, help_text="When someone last checked this against the vendor."
+    )
+    note = models.TextField(blank=True, default="", help_text="What an estimator should know.")
+
     objects = EffectiveDatedQuerySet.as_manager()
+
+    @property
+    def is_stale(self) -> bool:
+        """
+        True when this programme should not be trusted without a check.
+
+        Two independent reasons, and either is enough: the cost protection has
+        lapsed, or nobody has reviewed the sheet inside the configured freshness
+        window. Derived rather than stored — a stored flag is wrong the day after
+        it is written, which is exactly when it matters.
+        """
+        from datetime import timedelta
+
+        from shared.config import get_settings
+
+        today = date.today()
+        if self.protected_until is not None and self.protected_until < today:
+            return True
+        if self.reviewed_on is None:
+            return False
+        months = get_settings().cost_freshness_months
+        return self.reviewed_on < today - timedelta(days=months * 30)
 
     class Meta:
         constraints = [

@@ -3,12 +3,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
+import { Toast, type ToastState } from "@/components/shell/Toast";
 import { primeCsrf } from "@/lib/api";
 
 export type Theme = "dark" | "light";
@@ -23,6 +26,14 @@ interface Chrome {
   dense: boolean;
   focus: boolean;
   setFocus: (f: boolean) => void;
+  /**
+   * The prototype's `flash` — a small confirmation, bottom-left, gone in 2.6s.
+   *
+   * On the chrome rather than on each screen because the actions that warrant one
+   * are spread across the app, and a toast that only some views could raise would
+   * be a toast estimators stop trusting.
+   */
+  flash: (title: string, sub?: string, warm?: boolean) => void;
 }
 
 const ChromeContext = createContext<Chrome | null>(null);
@@ -134,6 +145,20 @@ export function Providers({ children }: { children: React.ReactNode }) {
     void primeCsrf();
   }, []);
 
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const dismiss = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flash = useCallback((title: string, sub?: string, warm?: boolean) => {
+    setToast({ title, sub, warm });
+    if (dismiss.current) clearTimeout(dismiss.current);
+    dismiss.current = setTimeout(() => setToast(null), 2600);
+  }, []);
+
+  // A pending timer outliving the tree would setState on an unmounted provider.
+  useEffect(() => () => {
+    if (dismiss.current) clearTimeout(dismiss.current);
+  }, []);
+
   const { theme } = prefs;
 
   // The setters are built in here rather than outside, so the dependency list is
@@ -150,8 +175,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       dense: prefs.density === "Compact",
       focus: prefs.focus,
       setFocus: (f: boolean) => writePrefs({ ...prefs, focus: f }),
+      flash,
     }),
-    [prefs],
+    [prefs, flash],
   );
 
   return (
@@ -174,6 +200,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           }}
         >
           {children}
+          <Toast toast={toast} />
         </div>
       </ChromeContext.Provider>
     </QueryClientProvider>

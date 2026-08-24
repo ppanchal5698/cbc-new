@@ -306,6 +306,42 @@ class ReviewState(StrEnum):
     REJECTED = "REJECTED"
 
 
+class ItemSource(StrEnum):
+    """
+    Where a line item came from, and therefore how the ledger presents it.
+
+    Distinct from ``ReviewState``, which is about whether a *field* passed the
+    §5.6 gate. This is about the item as a whole: an estimator triaging a bid set
+    is asking "did we read this cleanly, is it a repeat, does it need me, or did I
+    type it in myself" — four different actions, not four shades of one.
+
+    DUPLICATE is the one that carries a second row with it: the same physical item
+    read from two documents, most often a base schedule and the addendum that
+    reissued it. Both are kept until someone says which to price.
+    """
+
+    EXTRACTED = "EXTRACTED"
+    REVIEW = "REVIEW"
+    DUPLICATE = "DUPLICATE"
+    MANUAL = "MANUAL"
+
+
+class NoteKind(StrEnum):
+    """
+    What a logged note is a record of.
+
+    Estimating runs on calls that never touch email, and the answers land in
+    someone's memory rather than the bid file. These are the three the prototype
+    distinguishes because they age differently: what the GC said is commercial,
+    what the architect said is usually an RFI in waiting, and an internal note is
+    a reminder to a colleague.
+    """
+
+    GC_CALL = "GC_CALL"
+    ARCHITECT_CALL = "ARCHITECT_CALL"
+    INTERNAL = "INTERNAL"
+
+
 class ExtractionRunStatus(StrEnum):
     """Status of one ``extraction_runs`` row."""
 
@@ -484,6 +520,8 @@ __all__ = [
     "PipelineJobStatus",
     "ElementType",
     "ReviewState",
+    "ItemSource",
+    "NoteKind",
     "ExtractionRunStatus",
     "Handing",
     "FireRatingLocation",

@@ -185,6 +185,47 @@ class DocumentViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ["created_at", "filename"]
 
     @extend_schema(
+        summary="Read this document again (§4.3 Tier 5)",
+        request=None,
+        responses={202: DocumentSerializer},
+        description=(
+            "Re-runs the pipeline over a document already in the system. The reason "
+            "an estimator asks is usually that triage skipped a page that mattered, "
+            "or that a routing change should now read it differently — Risk R12 in "
+            "practice.\n\n"
+            "Existing pipeline jobs are cleared so the run starts fresh. Without "
+            "that the OCR stage finds a completed job for its idempotency key and "
+            "resumes the old Textract result, which is the correct behaviour on a "
+            "redelivery and exactly the wrong one here."
+        ),
+    )
+    @action(detail=True, methods=["post"])
+    def reprocess(self, request, pk=None):
+        document = self.get_object()
+        if document.status == DocumentStatus.PROCESSING.value:
+            return Response(
+                {"detail": "this document is already being read"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        with transaction.atomic():
+            document.pipeline_jobs.all().delete()
+            document.manifest_complete = False
+            # The signal enqueues on the transition INTO READY_FOR_PROCESSING
+            # (§3.2 rule 2), so this assignment is the trigger.
+            document.status = DocumentStatus.READY_FOR_PROCESSING.value
+            document.status_detail = "Re-read requested by an estimator"
+            document.save(
+                update_fields=[
+                    "status", "status_detail", "manifest_complete", "updated_at",
+                ]
+            )
+
+        return Response(
+            DocumentSerializer(document).data, status=status.HTTP_202_ACCEPTED
+        )
+
+    @extend_schema(
         summary="Preprocessing manifest for a document (§4.1)",
         parameters=[
             OpenApiParameter("skipped_only", bool, description="Only pages that were not read."),

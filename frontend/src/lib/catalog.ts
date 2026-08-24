@@ -109,3 +109,22 @@ export function availability(item: CatalogItem): { label: string; fg: string } {
   if (item.is_stock) return { label: "Stocked", fg: "var(--app-pos)" };
   return { label: "Special order", fg: "var(--app-tx-2)" };
 }
+
+/**
+ * Record that someone checked a price book against the vendor today.
+ *
+ * It stamps a date. It does not fetch a new sheet and does not change a
+ * multiplier — no automatic refresh exists anywhere in the pricing path, because
+ * a price that moves underneath an estimator without their knowledge is the
+ * stale-data failure the freshness window is there to catch.
+ */
+export function useMarkReviewed() {
+  const qc = useQueryClient();
+  return useMutation<VendorMultiplier, Error, string>({
+    mutationFn: (id) =>
+      apiFetch<VendorMultiplier>(`/api/vendor-multipliers/${id}/mark-reviewed/`, {
+        method: "POST",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reference", "vendor-multipliers"] }),
+  });
+}

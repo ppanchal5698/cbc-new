@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     "pricing",
     "quotes",
     "feedback",
+    "notes",
 ]
 
 MIDDLEWARE = [

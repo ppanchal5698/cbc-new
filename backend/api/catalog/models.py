@@ -119,3 +119,39 @@ class CatalogItem(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.vendor} {self.sku}: {self.description[:50]}"
+
+
+class CatalogItemXref(TimestampedModel):
+    """
+    The same physical item as another manufacturer numbers it (§1.4).
+
+    Restroom accessories are the case this exists for: a specification names a
+    Bobrick part, CBC quotes the ASI or Bradley equivalent, and the estimator is
+    the only place that mapping currently lives. Searching a Bobrick number and
+    finding the ASI equivalent is the difference between pricing the line and
+    phoning someone.
+
+    Deliberately **not** a substitution decision. §1.4 is explicit that choosing a
+    direct equal is estimator judgment, not a rule the system applies: this table
+    says "these are the same item to a manufacturer", it does not say "quote that
+    one instead".
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    catalog_item = models.ForeignKey(
+        CatalogItem, on_delete=models.CASCADE, related_name="cross_references"
+    )
+    brand = models.CharField(max_length=255, db_index=True, help_text="e.g. 'ASI', 'Bradley'.")
+    part_number = models.CharField(max_length=255, db_index=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["catalog_item", "brand", "part_number"], name="uniq_xref_per_item"
+            )
+        ]
+        indexes = [models.Index(fields=["part_number"])]
+        ordering = ["brand"]
+
+    def __str__(self) -> str:
+        return f"{self.brand} {self.part_number}"

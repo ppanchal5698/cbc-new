@@ -24,7 +24,7 @@ import { RequireAuth } from "@/components/shell/RequireAuth";
 import { ApiError } from "@/lib/api";
 import { money2, plural } from "@/lib/format";
 import { useProject } from "@/lib/projects";
-import { GROUP_LABELS, groupLines, num, useExportQuote, useQuote, useUpdateLine } from "@/lib/quotes";
+import { divisionLabel, groupLines, num, useExportQuote, useQuote, useUpdateLine } from "@/lib/quotes";
 import type { Project, Quote } from "@/lib/schema";
 import { useMe } from "@/lib/session";
 
@@ -250,7 +250,7 @@ function Sheet({
           <div key={g.key} style={{ marginTop: "12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "4px 4px 5px", borderBottom: "1px solid #999" }}>
               <span style={{ fontSize: "10.5px", fontWeight: "800", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>
-                {GROUP_LABELS[g.key]?.name.toUpperCase() ?? g.key}
+                {divisionLabel(g.key === "none" ? "" : g.key).toUpperCase()}
               </span>
               <span style={{ fontSize: "10.5px", fontWeight: "800" }}>{money2(g.subtotal)}</span>
             </div>

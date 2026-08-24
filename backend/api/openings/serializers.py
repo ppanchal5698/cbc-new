@@ -175,8 +175,18 @@ class OpeningSerializer(serializers.ModelSerializer):
     class Meta:
         model = Opening
         fields = [
-            "id", "project", "extraction_run", "door_number",
+            # The ledger's own columns come first: this is the shape an estimator
+            # triages a bid set in, and it spans Division 06, 08 and 10 rather
+            # than doors alone.
+            "id", "project", "extraction_run",
+            "door_number", "description", "csi_division", "quantity",
+            "source_kind", "sheet_label", "cell_label", "quote_text",
+            "duplicate_of", "duplicate_note",
             "size_raw", "width_inches", "height_inches",
+            # Zero-tolerance fields (§5.8). Not on the grid — the prototype's row
+            # has no room for them — but carried on every record and shown in the
+            # expanded detail, because a dropped rating is a code-compliance
+            # failure rather than a cosmetic one.
             "handing", "handing_absent",
             "finish_raw", "finish_code", "finish_us_code", "finish_bhma_code",
             "fire_rating_raw", "fire_rating_minutes", "fire_rating_absent",
@@ -186,8 +196,22 @@ class OpeningSerializer(serializers.ModelSerializer):
             "review_state", "review_notes", "provenance",
             "created_at", "updated_at",
         ]
+        # The six the prototype's edit grid exposes, plus the review fields. Every
+        # other value is either extracted (and owned by its provenance row) or
+        # derived.
         read_only_fields = [
-            f for f in fields if f not in ("review_state", "review_notes")
+            f
+            for f in fields
+            if f
+            not in (
+                # `project` is writable so the composer can add an item the
+                # drawings never carried; everything else here is the six the
+                # prototype's edit grid exposes, plus review state.
+                "project",
+                "door_number", "description", "csi_division", "quantity",
+                "size_raw", "hardware_group", "review_state", "review_notes",
+                "source_kind", "quote_text",
+            )
         ]
 
 

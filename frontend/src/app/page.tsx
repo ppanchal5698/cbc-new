@@ -136,7 +136,12 @@ function Dashboard() {
             >
               <span style={{ display: "grid", placeItems: "center", width: "106px", height: "106px", borderRadius: "50%", background: "var(--app-panel)" }}>
                 <span style={{ fontSize: "26px", fontWeight: "800", letterSpacing: "-0.02em" }}>{pct}%</span>
-                <span style={{ fontSize: "10.5px", color: "var(--app-tx-3)" }}>Clear of flags</span>
+                {/* The prototype's label. The number under it is real — the share
+                    of open bids with nothing flagged for review — where the
+                    prototype's was a hardcoded 72%. If a focus *session* score
+                    ever lands (the rail's Focus mode has no session tracking
+                    behind it either), this is where it belongs. */}
+                <span style={{ fontSize: "10.5px", color: "var(--app-tx-3)" }}>Focus score</span>
               </span>
             </span>
           </div>

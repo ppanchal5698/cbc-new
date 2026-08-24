@@ -10,11 +10,13 @@ from .models import Quote, QuoteLine, VendorRFQ
 
 class QuoteLineSerializer(serializers.ModelSerializer):
     catalog_item_detail = CatalogItemSerializer(source="catalog_item", read_only=True)
+    csi_division = serializers.SerializerMethodField()
 
     class Meta:
         model = QuoteLine
         fields = [
             "id", "quote", "opening", "match", "catalog_item", "catalog_item_detail",
+            "csi_division",
             "hardware_component",
             "line_group", "description", "unit", "line_order",
             "quantity", "our_cost", "margin_pct",
@@ -31,8 +33,24 @@ class QuoteLineSerializer(serializers.ModelSerializer):
         # recomputing on read would silently rewrite a quote's history (§6.2 step 5).
         read_only_fields = [
             "id", "catalog_item_detail", "sale_each", "extended", "subtotal",
-            "cost_is_stale", "below_floor_flag", "created_at", "updated_at",
+            "cost_is_stale", "below_floor_flag", "csi_division", "created_at", "updated_at",
         ]
+
+    def get_csi_division(self, obj) -> str:
+        """
+        The section this line prices under, for the quote's own grouping.
+
+        Read from the catalogue item first and the extracted line second: the
+        catalogue is the library's answer and the ledger row is the document's,
+        and where they differ the library is the one purchasing maintains.
+        """
+        item = obj.catalog_item
+        if item is not None and item.csi_division:
+            return item.csi_division
+        opening = obj.opening
+        if opening is not None and opening.csi_division:
+            return opening.csi_division
+        return ""
 
 
 class QuoteLineWriteSerializer(serializers.ModelSerializer):

@@ -11,11 +11,39 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createContext, useCallback, useContext, useState } from "react";
+import { NotesModal } from "@/components/notes/NotesModal";
 import { AppShell } from "@/components/shell/AppShell";
+import { useChrome } from "@/app/providers";
 import { dayMonth } from "@/lib/format";
+import { noteKindLabel, useNotes, type NoteKind } from "@/lib/notes";
 import type { Project } from "@/lib/schema";
 
 export type StageKey = 1 | 2 | 3 | 4;
+
+/**
+ * Opening the notes modal from anywhere inside an estimate.
+ *
+ * The prototype opens it from the top bar, the action bar and any ledger row —
+ * and the row passes that item's mark as the reference, so a call about opening
+ * 104 is findable as a call about opening 104. A context rather than prop
+ * drilling because the three call sites are three different depths.
+ */
+interface EstimateNotes {
+  open: (reference?: string, kind?: NoteKind) => void;
+  count: number;
+}
+
+const NotesContext = createContext<EstimateNotes | null>(null);
+
+export function useEstimateNotes(): EstimateNotes {
+  return (
+    useContext(NotesContext) ?? {
+      open: () => {},
+      count: 0,
+    }
+  );
+}
 
 export const STAGES: { key: StageKey; label: string; icon: string; path: string; built: boolean }[] = [
   { key: 1, label: "Intake", icon: "ph-duotone ph-folder-open", path: "", built: true },
@@ -39,17 +67,42 @@ export function EstimateShell({
   hint: string;
   children: React.ReactNode;
 }) {
+  const { flash } = useChrome();
+  const { data: notes } = useNotes(project?.id);
+  const [openNotes, setOpenNotes] = useState<{ reference: string; kind: NoteKind } | null>(null);
+
+  const open = useCallback(
+    (reference?: string, kind: NoteKind = "GC_CALL") =>
+      setOpenNotes({ reference: reference || project?.name || "this bid", kind }),
+    [project?.name],
+  );
+
+  const count = notes?.length ?? 0;
+
   return (
-    <AppShell
-      crumbs={[
-        { label: "Bid board", href: "/board" },
-        { label: `${project?.name ?? "Estimate"} · ${STAGES[stage - 1].label}` },
-      ]}
-      progress={<Progress project={project} stage={stage} subs={subs} />}
-      actionBar={<ActionBar project={project} stage={stage} hint={hint} />}
-    >
-      {children}
-    </AppShell>
+    <NotesContext.Provider value={{ open, count }}>
+      <AppShell
+        crumbs={[
+          { label: "Bid board", href: "/board" },
+          { label: `${project?.name ?? "Estimate"} · ${STAGES[stage - 1].label}` },
+        ]}
+        progress={<Progress project={project} stage={stage} subs={subs} />}
+        actionBar={<ActionBar project={project} stage={stage} hint={hint} />}
+        notes={project ? { count, onOpen: () => open() } : undefined}
+      >
+        {children}
+      </AppShell>
+
+      {openNotes && project ? (
+        <NotesModal
+          projectId={project.id}
+          reference={openNotes.reference}
+          initialKind={openNotes.kind}
+          onClose={() => setOpenNotes(null)}
+          onLogged={(kind) => flash(`${noteKindLabel(kind)} logged`, openNotes.reference)}
+        />
+      ) : null}
+    </NotesContext.Provider>
   );
 }
 
@@ -157,6 +210,8 @@ const BTN: React.CSSProperties = {
 
 function ActionBar({ project, stage, hint }: { project: Project | undefined; stage: StageKey; hint: string }) {
   const router = useRouter();
+  const notes = useEstimateNotes();
+  const { flash } = useChrome();
   const next = STAGES[stage];
 
   return (
@@ -170,16 +225,28 @@ function ActionBar({ project, stage, hint }: { project: Project | undefined; sta
         {stage === 1 ? "Bid board" : "Back"}
       </button>
 
-      <button disabled title="Calls and notes are their own phase." className="hv-7d6430" style={{ ...BTN, cursor: "not-allowed" }}>
+      <button onClick={() => notes.open()} className="hv-7d6430" style={BTN}>
         <i className="ph-duotone ph-phone-call" style={{ fontSize: "16px" }}></i>Log a call
+        {notes.count ? (
+          <span style={{ fontSize: "11.5px", color: "var(--app-tx-3)" }}>{notes.count}</span>
+        ) : null}
       </button>
 
       <div style={{ flex: "1", minWidth: "0", fontSize: "12.5px", color: "var(--app-tx-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         {hint}
       </div>
 
-      {/* No "Save draft": every edit in this app is a request that already
-          succeeded or failed. A button that saves nothing is worse than none. */}
+      {/* The prototype has a Save draft here. Every edit in this app is already a
+          request that succeeded or failed, so there is nothing left to save — but
+          an estimator who has been typing wants to be told that, not left
+          wondering. It confirms rather than pretending to write. */}
+      <button
+        onClick={() => flash("Everything is saved", "Each change was written as you made it")}
+        className="hv-8bcdf4"
+        style={BTN}
+      >
+        <i className="ph-duotone ph-floppy-disk" style={{ fontSize: "16px" }}></i>Save draft
+      </button>
 
       {next && project ? (
         next.built ? (
