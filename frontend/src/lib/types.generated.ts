@@ -1801,6 +1801,28 @@ export interface paths {
         patch: operations["vendor_multipliers_partial_update"];
         trace?: never;
     };
+    "/api/vendor-multipliers/{id}/mark-reviewed/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record that this sheet was checked today
+         * @description Stamps `reviewed_on`. It records that a person looked; it does **not** fetch a new sheet or change a multiplier.
+         *
+         *     That distinction is the whole point. No automatic refresh exists anywhere in the pricing path, because a price that moves underneath an estimator without their knowledge is precisely the stale-data failure NFR-10 is about. Changing a multiplier means a new effective-dated row, so a quote issued in March still reproduces in September.
+         */
+        post: operations["vendor_multipliers_mark_reviewed_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vendor-rfqs/": {
         parameters: {
             query?: never;
@@ -3969,6 +3991,14 @@ export interface components {
             /** Format: uuid */
             catalog_item?: string | null;
             readonly catalog_item_detail: components["schemas"]["CatalogItem"];
+            /**
+             * @description The section this line prices under, for the quote's own grouping.
+             *
+             *     Read from the catalogue item first and the extracted line second: the
+             *     catalogue is the library's answer and the ledger row is the document's,
+             *     and where they differ the library is the one purchasing maintains.
+             */
+            readonly csi_division: string;
             /**
              * Format: uuid
              * @description Set when this line came from resolving the opening's hardware-set callout (§5.11). Hardware is most of a real CBC quote, and this is the link that carries an HW-3 line back to the spec text that defined it.
@@ -8276,6 +8306,28 @@ export interface operations {
                 "multipart/form-data": components["schemas"]["PatchedVendorMultiplierRequest"];
             };
         };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorMultiplier"];
+                };
+            };
+        };
+    };
+    vendor_multipliers_mark_reviewed_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A UUID string identifying this vendor multiplier. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {

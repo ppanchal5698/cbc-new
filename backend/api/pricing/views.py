@@ -11,6 +11,8 @@ from datetime import date
 from common.permissions import IsAdminOrReadOnly
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from .models import FinishCode, MarginBand, TaxRate, ThroatDepth, VendorMultiplier
 from .serializers import (
@@ -77,6 +79,27 @@ class VendorMultiplierViewSet(EffectiveDatedViewSet):
     queryset = VendorMultiplier.objects.order_by("vendor_name", "-effective_date")
     serializer_class = VendorMultiplierSerializer
     filterset_fields = ["vendor_name", "tier"]
+
+    @extend_schema(
+        summary="Record that this sheet was checked today",
+        request=None,
+        responses={200: VendorMultiplierSerializer},
+        description=(
+            "Stamps `reviewed_on`. It records that a person looked; it does **not** "
+            "fetch a new sheet or change a multiplier.\n\n"
+            "That distinction is the whole point. No automatic refresh exists "
+            "anywhere in the pricing path, because a price that moves underneath an "
+            "estimator without their knowledge is precisely the stale-data failure "
+            "NFR-10 is about. Changing a multiplier means a new effective-dated row, "
+            "so a quote issued in March still reproduces in September."
+        ),
+    )
+    @action(detail=True, methods=["post"], url_path="mark-reviewed")
+    def mark_reviewed(self, request, pk=None):
+        book = self.get_object()
+        book.reviewed_on = date.today()
+        book.save(update_fields=["reviewed_on", "updated_at"])
+        return Response(VendorMultiplierSerializer(book).data)
 
 
 @extend_schema_view(list=extend_schema(parameters=[AS_OF]))

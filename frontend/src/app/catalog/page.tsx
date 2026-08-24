@@ -66,7 +66,7 @@ function Catalog() {
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Part number, description or manufacturer"
+                  placeholder="Part number, description, manufacturer or cross-reference"
                   style={{ flex: "1", minWidth: "0", border: "0", outline: "none", background: "transparent", fontFamily: "var(--app-font)", fontSize: "13px", color: "var(--app-tx)" }}
                 />
                 <span style={{ fontSize: "11px", color: "var(--app-tx-3)", fontVariantNumeric: "tabular-nums" }}>{rows.length}</span>
@@ -115,8 +115,8 @@ function Catalog() {
               <div style={{ padding: "56px 24px", textAlign: "center" }}>
                 <div style={{ fontFamily: "var(--app-font-h)", fontSize: "17px", marginBottom: "6px" }}>No parts match</div>
                 <div style={{ fontSize: "12.5px", color: "var(--app-tx-3)", maxWidth: "360px", margin: "0 auto", lineHeight: "1.6" }}>
-                  The library is seeded from CBC&rsquo;s stock list. Until that list lands it holds a
-                  sample only, which is why matching cannot go live yet.
+                  Cross-references are searched too — a Bobrick number will find the ASI and
+                  Bradley equivalents.
                 </div>
               </div>
             ) : null}
@@ -197,6 +197,31 @@ function Detail({ item, isAdmin }: { item: CatalogItem | null; isAdmin: boolean 
           </div>
         ))}
       </div>
+
+      {item.cross_references?.length ? (
+        <>
+          <div style={{ marginTop: "22px", fontSize: "10.5px", letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--app-tx-3)" }}>
+            Cross-reference
+          </div>
+          <div style={{ marginTop: "9px", background: "var(--app-panel)", border: "1px solid var(--app-line)", borderRadius: "12px", overflow: "hidden" }}>
+            {item.cross_references.map((x) => (
+              <div key={x.id} style={{ display: "grid", gridTemplateColumns: "88px minmax(0,1fr)", gap: "10px", alignItems: "baseline", padding: "9px 12px", borderBottom: "1px solid var(--app-line)" }}>
+                <span style={{ fontSize: "12px", color: "var(--app-tx-3)" }}>{x.brand}</span>
+                <span style={{ fontSize: "13px", fontVariantNumeric: "tabular-nums", wordBreak: "break-word" }}>
+                  {x.part_number}
+                </span>
+              </div>
+            ))}
+          </div>
+          {/* §1.4: the system records that these are the same item to a
+              manufacturer. Choosing to quote one instead of another is estimator
+              judgment, and nothing here decides it. */}
+          <div style={{ marginTop: "9px", fontSize: "11.5px", color: "var(--app-tx-3)", lineHeight: 1.6 }}>
+            The same item as other manufacturers number it. Which to quote is your
+            call — a direct equal is recorded, never decided.
+          </div>
+        </>
+      ) : null}
 
       <div style={{ marginTop: "16px", fontSize: "12.5px", color: "var(--app-tx-2)", lineHeight: "1.6" }}>
         {item.is_stock

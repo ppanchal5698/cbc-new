@@ -337,15 +337,24 @@ export function lineFlags(line: QuoteLine): LineFlag[] {
   return flags;
 }
 
-/** Group headings, in the order FR-7 puts them on the sheet. */
-export const GROUP_ORDER = ["DOOR", "RESTROOM_ACCESSORIES", "OTHER", "FREIGHT"] as const;
-
-export const GROUP_LABELS: Record<string, { name: string; div: string }> = {
-  DOOR: { name: "Doors, frames and hardware", div: "Division 08" },
-  RESTROOM_ACCESSORIES: { name: "Restroom accessories and partitions", div: "Division 10" },
-  OTHER: { name: "Other items", div: "—" },
-  FREIGHT: { name: "Freight", div: "—" },
+/**
+ * CSI sections, in the order they appear on a CBC proposal.
+ *
+ * The quote groups by section rather than by the internal line group, because
+ * that is how the trade reads a bid: Division 08 openings, Division 10
+ * specialties, Division 06 finishes. Freight is not a section and sits last on
+ * its own.
+ */
+export const DIVISION_LABELS: Record<string, string> = {
+  "06 64 00": "Plastic panelling",
+  "08 11 00": "Metal doors and frames",
+  "08 14 00": "Wood doors",
+  "08 71 00": "Door hardware",
+  "10 28 00": "Toilet accessories",
 };
+
+export const divisionLabel = (division: string): string =>
+  DIVISION_LABELS[division] ?? (division ? `Division ${division.slice(0, 2)}` : "Unsectioned");
 
 export interface LineGroup {
   key: string;
@@ -356,23 +365,60 @@ export interface LineGroup {
   subtotal: string;
 }
 
-/** Split a quote's lines into the blocks the sheet shows, in `line_order`. */
+/**
+ * Split a quote's lines into the blocks the sheet shows, in `line_order`.
+ *
+ * Freight keeps its own block regardless of section — it is a line with a
+ * nullable amount rather than something priced under a programme (C11).
+ *
+ * The subtotal is read off the first member rather than summed: the pricing
+ * engine stores it precisely so a quote reproduces months later, and a browser
+ * that re-added the rows would let the screen drift from the record.
+ */
 export function groupLines(quote: Quote | null | undefined): LineGroup[] {
   const lines = [...(quote?.lines ?? [])].sort((a, b) => (a.line_order ?? 0) - (b.line_order ?? 0));
-  const groups: LineGroup[] = [];
 
-  for (const key of GROUP_ORDER) {
-    const members = lines.filter((l) => l.line_group === key);
-    if (!members.length) continue;
+  const groups: LineGroup[] = [];
+  const seen = new Set<string>();
+
+  for (const line of lines) {
+    if (line.line_group === "FREIGHT") continue;
+    const key = line.csi_division || "";
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const members = lines.filter(
+      (l) => l.line_group !== "FREIGHT" && (l.csi_division || "") === key,
+    );
     groups.push({
-      key,
-      ...GROUP_LABELS[key],
+      key: key || "none",
+      name: divisionLabel(key),
+      div: key || "—",
       lines: members,
       subtotal: members[0].subtotal,
     });
   }
+
+  const freight = lines.filter((l) => l.line_group === "FREIGHT");
+  if (freight.length) {
+    groups.push({
+      key: "FREIGHT",
+      name: "Freight",
+      div: "—",
+      lines: freight,
+      subtotal: freight[0].subtotal,
+    });
+  }
   return groups;
 }
+
+/**
+ * The lines an estimator has changed by hand.
+ *
+ * Worth being able to isolate: on a forty-line quote the overrides are the ones
+ * carrying a reason and an owner, and they are what a reviewer looks at first.
+ */
+export const editedLines = (quote: Quote | null | undefined): QuoteLine[] =>
+  (quote?.lines ?? []).filter((l) => l.margin_overridden || l.cost_source === "MANUAL");
 
 /** A number the API sent as a decimal string. `null` stays null, not zero. */
 export const num = (v: string | number | null | undefined): number =>

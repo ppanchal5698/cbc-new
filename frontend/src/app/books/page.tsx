@@ -1,40 +1,29 @@
 "use client";
 
 /**
- * Price books — the five reference tables that turn a matched part into money
- * (§7.5), ported from the "price books" section of the Ops-Hub prototype.
+ * Price books — ported from the prototype's programme list and detail.
  *
- * **Every row shows its effective date, and multipliers show their sheet
- * version.** NFR-3 requires a quote line to be traceable to the tier *and* the
- * sheet that produced it, and Risk R5 is that this data goes stale with nobody
- * named to own it. Putting the dates on the surface is the cheapest form of that
- * guardrail: a book nobody has refreshed since last year says so in the list.
+ * A multiplier on its own tells an estimator nothing about whether to trust it.
+ * Risk R5 is that stale prices quietly drive real quotes, and NFR-10 still has no
+ * named steward — so what this screen does is put the programme's own dates and
+ * owner next to the figure they justify: when the sheet took effect, how long
+ * CBC's cost is protected, who owns it, and when anyone last looked.
  *
- * Two things this screen must never soften:
- *
- *  - **US19 and US26D are different rows.** Estimators flagged it explicitly —
- *    different satin finishes on different base metals, different BHMA codes. A
- *    UI that grouped them by the word "satin" would recreate the exact
- *    conflation the finish table exists to prevent.
- *  - **Tax is Ohio and Kentucky only.** The other 48 states and Canada are
- *    untaxed because CBC sells to a GC, not an end customer.
+ * Two facts the UI must never soften. Protection lapsing is not a tidy-up
+ * reminder: past that date a mid-year list increase reaches the quote, which is
+ * why a lapsed programme is called out rather than greyed. And the catalogue's
+ * finish codes stay separate rows — US19 and US26D are different satin finishes
+ * on different base metals, and estimators flagged conflating them explicitly.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { AppShell } from "@/components/shell/AppShell";
 import { RequireAuth } from "@/components/shell/RequireAuth";
-import { BAND_LABELS, useFinishCodes, useMarginBands, useTaxRates, useThroatDepths, useVendorMultipliers } from "@/lib/catalog";
-import { plural } from "@/lib/format";
-
-type Book = "multipliers" | "margins" | "finishes" | "throats" | "taxes";
-
-const BOOKS: { key: Book; label: string; blurb: string }[] = [
-  { key: "multipliers", label: "Vendor multipliers", blurb: "List × multiplier, by negotiated tier." },
-  { key: "margins", label: "Margin bands", blurb: "Applied as a divisor, not a markup." },
-  { key: "finishes", label: "Finish codes", blurb: "The two nomenclatures in simultaneous use." },
-  { key: "throats", label: "Throat depths", blurb: "Frame depth by wall type." },
-  { key: "taxes", label: "Tax rates", blurb: "Ohio and Kentucky only." },
-];
+import { useChrome } from "@/app/providers";
+import { useCatalogItems, useMarkReviewed, useVendorMultipliers } from "@/lib/catalog";
+import { dayMonth, money2, plural } from "@/lib/format";
+import type { CatalogItem, VendorMultiplier } from "@/lib/schema";
+import { useMe } from "@/lib/session";
 
 export default function BooksPage() {
   return (
@@ -45,218 +34,231 @@ export default function BooksPage() {
 }
 
 function Books() {
-  const [book, setBook] = useState<Book>("multipliers");
+  const { data: books } = useVendorMultipliers();
+  const { data: items } = useCatalogItems({});
+  const [selected, setSelected] = useState<string | null>(null);
+
+  const list = books ?? [];
+  const book = list.find((b) => b.id === selected) ?? list[0] ?? null;
+  const stale = list.filter((b) => b.is_stale).length;
 
   return (
     <AppShell crumbs={[{ label: "Price books" }]}>
-      <div style={{ position: "absolute", inset: "0", minWidth: "0", display: "grid", gridTemplateColumns: "330px minmax(0,1fr)", overflow: "hidden" }}>
-        <div style={{ minWidth: "0", overflowY: "auto", overflowX: "hidden", borderRight: "1px solid var(--app-line)", background: "var(--app-bg-2)", padding: "20px 0 24px" }}>
+      <div style={{ position: "absolute", inset: 0, minWidth: 0, display: "grid", gridTemplateColumns: "330px minmax(0,1fr)", overflow: "hidden" }}>
+        <div style={{ minWidth: 0, overflowY: "auto", overflowX: "hidden", borderRight: "1px solid var(--app-line)", background: "var(--app-bg-2)", padding: "20px 0 24px" }}>
           <div style={{ padding: "0 18px 12px" }}>
-            <div style={{ fontFamily: "var(--app-font-h)", fontWeight: "600", fontSize: "22px", letterSpacing: "-0.015em" }}>Price books</div>
-            <div style={{ fontSize: "12.5px", color: "var(--app-tx-2)", marginTop: "3px", lineHeight: "1.5" }}>
-              What every quote line is priced against. Each row carries the date it took effect.
+            <div style={{ fontFamily: "var(--app-font-h)", fontWeight: 600, fontSize: "22px", letterSpacing: "-0.015em" }}>
+              Price books
+            </div>
+            <div style={{ fontSize: "12.5px", color: "var(--app-tx-2)", marginTop: "3px", lineHeight: 1.5 }}>
+              {plural(list.length, "multiplier programme")}
+              {/* "past review" would be wrong: a programme is flagged when its
+                  review date has passed *or* its cost protection has lapsed, and
+                  the second is the one that reaches a quote. */}
+              {stale ? ` · ${stale} needing attention` : " · all current"}
             </div>
           </div>
 
-          {BOOKS.map((b) => {
-            const on = book === b.key;
+          {list.map((b) => {
+            const on = book?.id === b.id;
             return (
               <button
-                key={b.key}
-                onClick={() => setBook(b.key)}
+                key={b.id}
+                onClick={() => setSelected(b.id)}
                 className="hv-b20764"
-                style={{ width: "100%", textAlign: "left", background: on ? "var(--app-line)" : "transparent", border: "0", borderLeft: `2px solid ${on ? "var(--app-accent)" : "transparent"}`, padding: "11px 18px", fontFamily: "var(--app-font)", cursor: "pointer", transition: "background 140ms ease" }}
+                style={{ width: "100%", textAlign: "left", background: on ? "var(--app-line)" : "transparent", border: 0, borderLeft: `2px solid ${on ? "var(--app-accent)" : b.is_stale ? "var(--app-neg)" : "transparent"}`, padding: "11px 18px", fontFamily: "var(--app-font)", cursor: "pointer", transition: "background 140ms ease" }}
               >
-                <span style={{ display: "block", fontSize: "14px", fontWeight: on ? 700 : 500 }}>{b.label}</span>
-                <span style={{ display: "block", fontSize: "12px", color: "var(--app-tx-2)", marginTop: "2px" }}>{b.blurb}</span>
+                <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
+                  <span style={{ fontSize: "14px", fontWeight: on ? 700 : 500 }}>{b.vendor_name}</span>
+                  <span style={{ fontSize: "13px", fontVariantNumeric: "tabular-nums", color: "var(--app-accent)" }}>
+                    {b.multiplier}
+                  </span>
+                </span>
+                <span style={{ display: "block", fontSize: "12px", color: "var(--app-tx-2)", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {b.tier || b.sheet_name || "—"}
+                </span>
+                <span style={{ display: "block", fontSize: "11.5px", color: b.is_stale ? "var(--app-neg)" : "var(--app-tx-3)", marginTop: "2px" }}>
+                  {bookState(b)}
+                </span>
               </button>
             );
           })}
+
+          {!list.length ? (
+            <div style={{ padding: "24px 18px", fontSize: "12.5px", color: "var(--app-tx-3)", lineHeight: 1.6 }}>
+              Nothing seeded. Run <code style={{ fontSize: "12px" }}>make seed</code> to load the
+              programmes the pricing engine reads.
+            </div>
+          ) : null}
         </div>
 
-        <div style={{ minWidth: "0", overflowY: "auto", overflowX: "hidden", padding: "24px 32px 34px" }}>
-          {book === "multipliers" ? <Multipliers /> : null}
-          {book === "margins" ? <Margins /> : null}
-          {book === "finishes" ? <Finishes /> : null}
-          {book === "throats" ? <Throats /> : null}
-          {book === "taxes" ? <Taxes /> : null}
-        </div>
+        <Detail book={book} items={items ?? []} />
       </div>
     </AppShell>
   );
 }
 
-/* ---------------------------------------------------------------- books --- */
+/** What the rail says under each programme — the reason to look, or that there is none. */
+function bookState(b: VendorMultiplier): string {
+  if (b.protected_until && new Date(b.protected_until) < new Date()) {
+    return `Protection lapsed ${dayMonth(b.protected_until)}`;
+  }
+  if (b.is_stale) return "Past its review date";
+  if (b.protected_until) return `Protected to ${dayMonth(b.protected_until)}`;
+  return b.reviewed_on ? `Reviewed ${dayMonth(b.reviewed_on)}` : "Never reviewed";
+}
 
-function Multipliers() {
-  const { data } = useVendorMultipliers();
-  return (
-    <Book
-      title="Vendor multipliers"
-      sub="Cost is list × multiplier, keyed by vendor, tier and effective date. MAP is never used as cost — it governs advertising, not what CBC pays."
-      columns="180px 150px 110px 130px minmax(0,1fr)"
-      head={["Vendor", "Tier", "Multiplier", "Effective", "Sheet version"]}
-      rows={(data ?? []).map((m) => ({
-        key: m.id,
-        cells: [
-          m.vendor_name,
-          m.tier || "—",
-          m.multiplier ?? "—",
-          m.effective_date ?? "not dated",
-          // NFR-3 wants the sheet version alongside the tier, not instead of it.
-          m.source_sheet_version || "not recorded",
-        ],
-        dim: !m.source_sheet_version,
-      }))}
-    />
+function Detail({ book, items }: { book: VendorMultiplier | null; items: CatalogItem[] }) {
+  const { data: me } = useMe();
+  const { flash } = useChrome();
+  const markReviewed = useMarkReviewed();
+
+  const priced = useMemo(
+    () => (book ? items.filter((i) => i.vendor === book.vendor_name) : []),
+    [book, items],
   );
-}
 
-function Margins() {
-  const { data } = useMarginBands();
+  if (!book) {
+    return (
+      <div style={{ minWidth: 0, padding: "24px 32px", fontSize: "13px", color: "var(--app-tx-3)" }}>
+        Pick a programme to see what it prices and who owns it.
+      </div>
+    );
+  }
+
+  const stats: { label: string; val: string; note: string; warn?: boolean }[] = [
+    { label: "Effective", val: dayMonth(book.effective_date), note: "Sheet date" },
+    {
+      label: "Protected through",
+      val: book.protected_until ? dayMonth(book.protected_until) : "—",
+      note: book.protected_until ? "Cost held to this date" : "No protection",
+      warn: Boolean(book.protected_until && new Date(book.protected_until) < new Date()),
+    },
+    {
+      label: "Last reviewed",
+      val: book.reviewed_on ? dayMonth(book.reviewed_on) : "Never",
+      note: book.is_stale ? "Past its review date" : "Current",
+      warn: book.is_stale,
+    },
+    {
+      label: "Steward",
+      val: book.steward || "Unassigned",
+      note: book.steward ? "Owns this sheet" : "NFR-10 is still open",
+      warn: !book.steward,
+    },
+  ];
+
   return (
-    <Book
-      title="Margin bands"
-      sub="Applied as a divisor: sale = cost ÷ (1 − margin). Stable for fourteen years, overridable per line with a logged reason."
-      columns="240px 130px 130px 130px minmax(0,1fr)"
-      head={["Product band", "Target", "Floor", "Effective", "Divisor"]}
-      rows={(data ?? []).map((b) => ({
-        key: b.id,
-        cells: [
-          BAND_LABELS[b.product_type_band ?? ""] ?? b.product_type_band ?? "—",
-          pct(b.target_margin_pct),
-          pct(b.floor_margin_pct),
-          b.effective_date ?? "not dated",
-          b.target_margin_pct ? (1 - Number(b.target_margin_pct)).toFixed(2) : "—",
-        ],
-      }))}
-    />
-  );
-}
-
-function Finishes() {
-  const { data } = useFinishCodes();
-  return (
-    <Book
-      title="Finish codes"
-      sub="Two naming systems in simultaneous use, and both have to be interpreted. US19 and US26D are different satin finishes on different base metals — they are separate rows and must never collapse into one."
-      columns="120px 120px minmax(0,1fr) 160px"
-      head={["US code", "BHMA", "Description", "Base metal"]}
-      rows={(data ?? []).map((f) => ({
-        key: f.id,
-        cells: [f.us_code, f.bhma_code, f.description, f.base_metal || "—"],
-      }))}
-    />
-  );
-}
-
-function Throats() {
-  const { data } = useThroatDepths();
-  return (
-    <Book
-      title="Throat depths"
-      sub="Frame depth by wall type. Five standards cover the large majority; anything else is entered by hand — a table, deliberately not a hardcoded pick-list."
-      columns="160px 260px 130px minmax(0,1fr)"
-      head={["Depth", "Wall type", "Custom", "Notes"]}
-      rows={(data ?? []).map((t) => ({
-        key: t.id,
-        cells: [
-          t.throat_depth_inches ? `${t.throat_depth_inches}"` : "—",
-          t.wall_type,
-          t.is_custom ? "Manual entry" : "Standard",
-          t.notes || "—",
-        ],
-      }))}
-    />
-  );
-}
-
-function Taxes() {
-  const { data } = useTaxRates();
-  return (
-    <Book
-      title="Tax rates"
-      sub="Ohio and Kentucky only. Everywhere else is untaxed because the sale is to a general contractor or corporation, not the end customer — and Ohio's rate is county-dependent, so it is reference data with a date rather than a constant."
-      columns="140px 140px 160px minmax(0,1fr)"
-      head={["Jurisdiction", "Rate", "Effective", "Description"]}
-      rows={(data ?? []).map((t) => ({
-        key: t.id,
-        cells: [t.jurisdiction, pct(t.rate_pct), t.effective_date ?? "not dated", t.description || "—"],
-      }))}
-    />
-  );
-}
-
-/* ---------------------------------------------------------------- frame --- */
-
-interface BookRow {
-  key: string;
-  cells: (string | number | null | undefined)[];
-  dim?: boolean;
-}
-
-function Book({
-  title,
-  sub,
-  columns,
-  head,
-  rows,
-}: {
-  title: string;
-  sub: string;
-  columns: string;
-  head: string[];
-  rows: BookRow[];
-}) {
-  return (
-    <>
+    <div style={{ minWidth: 0, overflowY: "auto", overflowX: "hidden", padding: "24px 32px 34px" }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "20px" }}>
-        <div style={{ maxWidth: "640px" }}>
-          <div style={{ fontFamily: "var(--app-font-h)", fontWeight: "600", fontSize: "26px", letterSpacing: "-0.02em" }}>{title}</div>
-          <div style={{ fontSize: "13px", color: "var(--app-tx-2)", marginTop: "5px", lineHeight: 1.6 }}>{sub}</div>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: "var(--app-font-h)", fontWeight: 600, fontSize: "26px", letterSpacing: "-0.02em" }}>
+            {book.sheet_name || `${book.vendor_name} ${book.tier}`.trim()}
+          </div>
+          <div style={{ fontSize: "13px", color: "var(--app-tx-2)", marginTop: "3px" }}>
+            {book.vendor_name}
+            {book.tier ? ` · ${book.tier}` : ""} · sheet {book.source_sheet_version || "not recorded"}
+          </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--app-tx-3)" }}>Rows</div>
-          <div style={{ fontFamily: "var(--app-font-h)", fontWeight: "600", fontSize: "34px", letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
-            {rows.length}
+          <div style={{ fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--app-tx-3)" }}>
+            Multiplier
+          </div>
+          <div style={{ fontFamily: "var(--app-font-h)", fontWeight: 600, fontSize: "34px", letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+            {book.multiplier}
           </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: columns, gap: "0 14px", marginTop: "22px", padding: "9px 8px", borderBottom: "1px solid var(--app-line)", fontSize: "10.5px", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--app-tx-3)" }}>
-        {head.map((h) => (
-          <span key={h}>{h}</span>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: "1px", marginTop: "24px", background: "var(--app-line)" }}>
+        {stats.map((s) => (
+          <div key={s.label} style={{ background: "var(--app-bg)", padding: "14px 16px 16px" }}>
+            <div style={{ fontSize: "11px", letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--app-tx-3)" }}>
+              {s.label}
+            </div>
+            <div style={{ fontSize: "16px", fontVariantNumeric: "tabular-nums", marginTop: "6px", color: s.warn ? "var(--app-neg)" : "var(--app-tx)" }}>
+              {s.val}
+            </div>
+            <div style={{ fontSize: "11.5px", color: "var(--app-tx-2)", marginTop: "2px" }}>{s.note}</div>
+          </div>
         ))}
       </div>
 
-      {rows.map((r) => (
-        <div key={r.key} className="hv-40d530" style={{ display: "grid", gridTemplateColumns: columns, gap: "0 14px", alignItems: "center", padding: "10px 8px", borderBottom: "1px solid var(--app-line)" }}>
-          {r.cells.map((c, i) => (
-            <span
-              key={i}
-              style={{ fontSize: "13px", fontVariantNumeric: "tabular-nums", color: i === 0 ? "var(--app-tx)" : "var(--app-tx-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", opacity: r.dim && i === r.cells.length - 1 ? 0.6 : 1 }}
-              title={String(c ?? "")}
-            >
-              {c ?? "—"}
+      <div style={{ marginTop: "26px", fontSize: "11px", letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--app-tx-3)" }}>
+        Priced under this program
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "210px minmax(0,1fr) 96px 96px", gap: "0 14px", marginTop: "10px", padding: "9px 8px", borderBottom: "1px solid var(--app-line)", fontSize: "10.5px", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--app-tx-3)" }}>
+        <span>Part</span>
+        <span>Description</span>
+        <span style={{ textAlign: "right" }}>List</span>
+        <span style={{ textAlign: "right" }}>Net</span>
+      </div>
+      {priced.map((i) => {
+        const list = Number(i.list_price ?? 0);
+        return (
+          <div key={i.id} className="hv-40d530" style={{ display: "grid", gridTemplateColumns: "210px minmax(0,1fr) 96px 96px", gap: "0 14px", alignItems: "center", padding: "10px 8px", borderBottom: "1px solid var(--app-line)" }}>
+            <span style={{ fontSize: "12.5px", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.sku}</span>
+            <span style={{ minWidth: 0, fontSize: "13px", color: "var(--app-tx-2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.description}</span>
+            <span style={{ fontSize: "13px", fontVariantNumeric: "tabular-nums", textAlign: "right", color: "var(--app-tx-3)" }}>
+              {list ? money2(list) : "—"}
             </span>
-          ))}
-        </div>
-      ))}
-
-      {!rows.length ? (
-        <div style={{ padding: "48px 8px", fontSize: "13px", color: "var(--app-tx-3)", lineHeight: 1.6, maxWidth: "460px" }}>
-          Nothing seeded here yet. Run <code style={{ fontSize: "12px" }}>make seed</code> to load the
-          reference data the pricing engine reads.
+            <span style={{ fontSize: "13px", fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+              {list ? money2(list * Number(book.multiplier)) : "—"}
+            </span>
+          </div>
+        );
+      })}
+      {!priced.length ? (
+        <div style={{ padding: "22px 8px", fontSize: "12.5px", color: "var(--app-tx-3)", lineHeight: 1.6 }}>
+          Nothing in the catalogue prices under this programme yet. The library is a
+          sample until CBC&rsquo;s stock list lands.
         </div>
       ) : null}
 
-      <div style={{ marginTop: "22px", maxWidth: "640px", fontSize: "12.5px", color: "var(--app-tx-3)", lineHeight: "1.7" }}>
-        These tables are edited in the Django admin, where every change is attributed to a person.
-        No named data steward exists yet, so the effective dates above are the only thing standing
-        between a lapsed sheet and a wrong quote — {plural(rows.length, "row")} shown.
+      {book.note ? (
+        <div style={{ marginTop: "22px", maxWidth: "640px", fontSize: "13px", color: "var(--app-tx-2)", lineHeight: 1.7 }}>
+          {book.note}
+        </div>
+      ) : null}
+
+      <div style={{ display: "flex", gap: "9px", marginTop: "18px" }}>
+        <button
+          onClick={() =>
+            markReviewed.mutate(book.id, {
+              onSuccess: () => flash("Marked as reviewed", book.sheet_name || book.vendor_name),
+            })
+          }
+          disabled={me?.role !== "ADMIN" || markReviewed.isPending}
+          title={
+            me?.role === "ADMIN"
+              ? "Records that someone checked this sheet against the vendor today"
+              : "Reference data is maintained by an admin."
+          }
+          style={{ background: me?.role === "ADMIN" ? "var(--app-accent)" : "var(--app-panel-2)", color: me?.role === "ADMIN" ? "#fff" : "var(--app-tx-3)", border: me?.role === "ADMIN" ? 0 : "1px solid var(--app-line)", borderRadius: "10px", padding: "9px 15px", fontFamily: "var(--app-font)", fontSize: "13px", cursor: me?.role === "ADMIN" ? "pointer" : "not-allowed" }}
+        >
+          {markReviewed.isPending ? "Recording…" : "Mark as reviewed today"}
+        </button>
+        <button
+          onClick={() =>
+            flash(
+              "Ask purchasing for the current sheet",
+              `${book.vendor_name} · ${book.sheet_name || book.tier}`,
+              true,
+            )
+          }
+          className="hv-b20764"
+          style={{ background: "transparent", border: "1px solid var(--app-line)", color: "var(--app-tx)", borderRadius: "10px", padding: "9px 15px", fontFamily: "var(--app-font)", fontSize: "13px", cursor: "pointer" }}
+        >
+          Request an updated sheet
+        </button>
       </div>
-    </>
+
+      <div style={{ marginTop: "16px", maxWidth: "640px", fontSize: "12px", color: "var(--app-tx-3)", lineHeight: 1.7 }}>
+        Marking a sheet reviewed records that someone checked it. It does not fetch a
+        new one — no automatic refresh exists anywhere in the pricing path, because a
+        price that moves underneath an estimator without their knowledge is the
+        failure the freshness window is there to catch.
+      </div>
+    </div>
   );
 }
-
-const pct = (v: string | null | undefined) => (v === null || v === undefined ? "—" : `${(Number(v) * 100).toFixed(2)}%`);

@@ -5618,6 +5618,34 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/vendor-multipliers/{id}/mark-reviewed/:
+    post:
+      operationId: vendor_multipliers_mark_reviewed_create
+      description: |-
+        Stamps `reviewed_on`. It records that a person looked; it does **not** fetch a new sheet or change a multiplier.
+
+        That distinction is the whole point. No automatic refresh exists anywhere in the pricing path, because a price that moves underneath an estimator without their knowledge is precisely the stale-data failure NFR-10 is about. Changing a multiplier means a new effective-dated row, so a quote issued in March still reproduces in September.
+      summary: Record that this sheet was checked today
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        description: A UUID string identifying this vendor multiplier.
+        required: true
+      tags:
+      - vendor-multipliers
+      security:
+      - cookieAuth: []
+      - tokenAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorMultiplier'
+          description: ''
   /api/vendor-rfqs/:
     get:
       operationId: vendor_rfqs_list
@@ -9850,6 +9878,15 @@ components:
           allOf:
           - $ref: '#/components/schemas/CatalogItem'
           readOnly: true
+        csi_division:
+          type: string
+          description: |-
+            The section this line prices under, for the quote's own grouping.
+
+            Read from the catalogue item first and the extracted line second: the
+            catalogue is the library's answer and the ledger row is the document's,
+            and where they differ the library is the one purchasing maintains.
+          readOnly: true
         hardware_component:
           type: string
           format: uuid
@@ -9987,6 +10024,7 @@ components:
       - catalog_item_detail
       - cost_is_stale
       - created_at
+      - csi_division
       - extended
       - id
       - quote

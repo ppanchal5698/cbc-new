@@ -90,6 +90,9 @@ DETAIL_ACTION_ENDPOINTS = [
     "/api/quotes/{id}/export/",
     "/api/quotes/{id}/recalculate/",
     "/api/vendor-rfqs/{id}/record-price/",
+    # Records that a person checked a price book. Reference data drives money
+    # on every quote, so it is no more public than the quotes themselves.
+    "/api/vendor-multipliers/{id}/mark-reviewed/",
 ]
 
 NIL_UUID = "00000000-0000-0000-0000-000000000000"

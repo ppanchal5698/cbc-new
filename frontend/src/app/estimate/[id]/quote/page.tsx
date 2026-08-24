@@ -29,10 +29,12 @@ import { ApiError } from "@/lib/api";
 import { money0, money2, plural } from "@/lib/format";
 import {
   costSourceLabel,
+  editedLines,
   groupLines,
   lineFlags,
   num,
   useApproveQuote,
+  useCreateLine,
   useDeleteLine,
   useGenerateLines,
   useHardwareComponents,
@@ -40,6 +42,7 @@ import {
   useUpdateLine,
   useUpdateQuote,
 } from "@/lib/quotes";
+import { useChrome } from "@/app/providers";
 import { useProject } from "@/lib/projects";
 import type { Quote, QuoteLine } from "@/lib/schema";
 
@@ -65,10 +68,24 @@ function QuoteScreen() {
 
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [onlyEdited, setOnlyEdited] = useState(false);
+  const { flash } = useChrome();
+  const createLine = useCreateLine(id);
 
-  const groups = useMemo(() => groupLines(quote), [quote]);
   const lines = quote?.lines ?? [];
+  const edited = useMemo(() => editedLines(quote), [quote]);
   const blocking = lines.filter((l) => l.needs_review);
+
+  // Filtering narrows which rows are shown, never which are summed: the totals
+  // describe the quote, not the view of it.
+  const groups = useMemo(() => {
+    const all = groupLines(quote);
+    if (!onlyEdited) return all;
+    const keep = new Set(edited.map((l) => l.id));
+    return all
+      .map((g) => ({ ...g, lines: g.lines.filter((l) => keep.has(l.id)) }))
+      .filter((g) => g.lines.length);
+  }, [quote, onlyEdited, edited]);
 
   function onGenerate(replace: boolean) {
     if (!quote) return;
@@ -143,6 +160,30 @@ function QuoteScreen() {
 
             {quote && quote.status === "DRAFT" ? (
               <button
+                onClick={() =>
+                  createLine.mutate(
+                    {
+                      quote: quote.id,
+                      description: "New line — describe the item",
+                      line_group: "OTHER",
+                      quantity: "1",
+                      line_order: lines.length + 1,
+                      needs_review: true,
+                    },
+                    { onSuccess: () => flash("Line added", "Priced by hand", true) },
+                  )
+                }
+                disabled={createLine.isPending}
+                className="hv-f68886"
+                style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--app-panel-2)", border: "1px solid var(--app-line)", color: "var(--app-tx-2)", borderRadius: "10px", padding: "8px 12px", fontFamily: "var(--app-font)", fontSize: "12px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap" }}
+              >
+                <i className="ph-duotone ph-plus" style={{ fontSize: "15px" }}></i>
+                Add line
+              </button>
+            ) : null}
+
+            {quote && quote.status === "DRAFT" ? (
+              <button
                 onClick={() => onGenerate(lines.length > 0)}
                 disabled={generate.isPending}
                 className="hv-f68886"
@@ -158,6 +199,19 @@ function QuoteScreen() {
             <div role="alert" style={{ flexShrink: 0, margin: "12px 18px 0", background: "var(--app-neg-soft)", border: "1px solid var(--app-neg-line)", color: "var(--app-neg)", borderRadius: "10px", padding: "10px 12px", fontSize: "12.5px", lineHeight: 1.55 }}>
               {error}
             </div>
+          ) : null}
+
+          {edited.length ? (
+            <button
+              onClick={() => setOnlyEdited((v) => !v)}
+              style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: "8px", margin: "12px 18px 0", background: onlyEdited ? "var(--app-neg)" : "var(--app-neg-soft)", border: "1px solid var(--app-neg-line)", color: onlyEdited ? "#fff" : "var(--app-neg)", borderRadius: "10px", padding: "8px 12px", fontFamily: "var(--app-font)", fontSize: "12px", fontWeight: 600, cursor: "pointer", textAlign: "left" }}
+            >
+              <i className="ph-duotone ph-pencil-line" style={{ fontSize: "15px" }}></i>
+              {plural(edited.length, "line")} edited by hand
+              <span style={{ opacity: 0.8, fontWeight: 500 }}>
+                {onlyEdited ? "· showing only these" : "· show only these"}
+              </span>
+            </button>
           ) : null}
 
           {unresolved?.length ? <UnresolvedBanner groups={unresolved.map((c) => c.hardware_group)} /> : null}
@@ -183,7 +237,7 @@ function QuoteScreen() {
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "12px", padding: "8px 2px", borderBottom: "1px solid var(--app-line)" }}>
                     <span style={{ display: "flex", alignItems: "baseline", gap: "9px" }}>
                       <span style={{ fontSize: "13.5px", fontWeight: "700" }}>{g.name}</span>
-                      <span style={{ fontSize: "11px", color: "var(--app-tx-3)" }}>
+                      <span style={{ fontSize: "11px", color: "var(--app-tx-3)", fontVariantNumeric: "tabular-nums" }}>
                         {g.div} · {plural(g.lines.length, "line")}
                       </span>
                     </span>
@@ -415,19 +469,32 @@ function Totals({
   const [freight, setFreight] = useState<string | null>(null);
   const locked = !quote || quote.status !== "DRAFT";
 
+  // Cost and margin are the two figures an estimator checks before approving,
+  // and neither is on the quote record — cost is the sum of what CBC pays and
+  // margin is what that leaves. Derived from the stored line figures rather than
+  // recomputed from cost and rate, so they can only ever agree with the sheet.
+  const cost = (quote?.lines ?? []).reduce(
+    (a, l) => a + num(l.our_cost) * num(l.quantity),
+    0,
+  );
+  const sell = num(quote?.subtotal_sale);
+  const marginPct = sell > 0 ? Math.round(((sell - cost) / sell) * 100) : 0;
+  const rate = num(quote?.tax_rate_applied);
+
   const totals = [
-    { label: "Sub-total", val: money2(quote?.subtotal_sale), size: "17px", fg: "var(--app-tx)" },
+    { label: "Cost", val: money2(cost), size: "19px", fg: "var(--app-tx-2)" },
+    { label: "Margin", val: `${marginPct}%`, size: "19px", fg: "var(--app-accent)" },
     {
-      label: quote?.tax_jurisdiction ? `Tax · ${quote.tax_jurisdiction}` : "Tax",
+      label: quote?.tax_jurisdiction ? `Tax ${(rate * 100).toFixed(3)}%` : "Tax",
       val: quote?.tax_jurisdiction ? money2(quote.tax_amount) : "None",
-      size: "17px",
-      fg: quote?.tax_jurisdiction ? "var(--app-tx)" : "var(--app-tx-3)",
+      size: "19px",
+      fg: quote?.tax_jurisdiction ? "var(--app-tx-2)" : "var(--app-tx-3)",
     },
-    { label: "Grand total", val: money2(quote?.grand_total), size: "22px", fg: "var(--app-accent)" },
+    { label: "Sell total", val: money2(quote?.grand_total), size: "26px", fg: "var(--app-tx)" },
   ];
 
   return (
-    <div style={{ flexShrink: "0", display: "grid", gridTemplateColumns: "minmax(0,1fr) 150px repeat(3,130px) 150px", gap: "0 18px", alignItems: "end", padding: "14px 18px 16px", borderTop: "1px solid var(--app-line)", background: "var(--app-bg-2)", borderRadius: "0 0 16px 16px" }}>
+    <div style={{ flexShrink: "0", display: "grid", gridTemplateColumns: "minmax(0,1fr) 150px repeat(4,128px) 150px", gap: "0 18px", alignItems: "end", padding: "14px 18px 16px", borderTop: "1px solid var(--app-line)", background: "var(--app-bg-2)", borderRadius: "0 0 16px 16px" }}>
       <div style={{ minWidth: "0", fontSize: "11.5px", color: "var(--app-tx-3)", lineHeight: "1.55" }}>
         Supply-only material; Hamilton Parker PO required; valid 30 days. Tax applies in Ohio and
         Kentucky only. Freight is quoted separately unless you enter it.
