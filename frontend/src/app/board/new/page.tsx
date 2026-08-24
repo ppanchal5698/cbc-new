@@ -13,7 +13,8 @@
  */
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { DateInput } from "@/components/form/DateInput";
 import { AppShell } from "@/components/shell/AppShell";
 import { RequireAuth } from "@/components/shell/RequireAuth";
 import { apiFetch, ApiError } from "@/lib/api";
@@ -52,6 +53,7 @@ export default function NewEstimatePage() {
 function NewEstimate() {
   const router = useRouter();
   const { data: me } = useMe();
+  const dueRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
@@ -73,11 +75,12 @@ function NewEstimate() {
     setBusy(true);
     setError(null);
     try {
+      const due_date = dueRef.current?.value || form.due_date || null;
       const project = await apiFetch<Project>("/api/projects/", {
         method: "POST",
         body: JSON.stringify({
           ...form,
-          due_date: form.due_date || null,
+          due_date,
           brand: form.brand || null,
           architect: form.architect || null,
           general_contractor: form.general_contractor || null,
@@ -119,7 +122,13 @@ function NewEstimate() {
               <label htmlFor="due" style={LABEL}>Bid due</label>
               {/* A native date input: the platform already ships a picker, a
                   keyboard path and a locale, and none of that needs a library. */}
-              <input id="due" type="date" value={form.due_date} onChange={set("due_date")} style={INPUT} />
+              <DateInput
+                ref={dueRef}
+                id="due"
+                value={form.due_date}
+                onValueChange={(due_date) => setForm((f) => ({ ...f, due_date }))}
+                style={INPUT}
+              />
             </div>
           </div>
 

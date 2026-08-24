@@ -99,3 +99,42 @@ export const ROLE_LABELS: Record<string, string> = {
   RFP: "Request for proposal",
   OTHER: "Other",
 };
+
+
+/**
+ * Read a page triage decided to skip (§4.3 Tier 5).
+ *
+ * §4.3 calls this "a required feature, not a nice-to-have", and Risk R12 is the
+ * reason: triage is the largest cost win in the system and it introduces exactly
+ * one new failure mode — a schedule the classifier did not recognise. A false
+ * positive costs $0.015; a false negative costs a missing opening.
+ *
+ * The endpoint also writes a `feedback` row, because a forced read is the
+ * clearest possible statement that the classifier was wrong about a page — which
+ * is what improves the Tier 1-3 anchors over time. The UI must not write a
+ * second one.
+ */
+export function useForceRead(documentId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation<DocumentManifest, Error, { pageId: string; reason?: string }>({
+    mutationFn: ({ pageId, reason }) =>
+      apiFetch<DocumentManifest>(`/api/manifest/${pageId}/force-read/`, {
+        method: "POST",
+        body: JSON.stringify({ ocr_route: "TEXTRACT_TABLES", reason: reason ?? "" }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["manifest", documentId] });
+      qc.invalidateQueries({ queryKey: ["documents"] });
+    },
+  });
+}
+
+/** Which pages of an addendum changed, and which were reused for free (§4.7). */
+export function usePageDiffs(documentId: string | undefined) {
+  return useQuery({
+    queryKey: ["page-diffs", documentId],
+    queryFn: () =>
+      apiFetch<{ page_number: number; status: string }[]>(`/api/documents/${documentId}/page-diffs/`),
+    enabled: Boolean(documentId),
+  });
+}

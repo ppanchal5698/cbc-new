@@ -9,6 +9,7 @@
  * is told to wait, and every other failure is told the same thing.
  */
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLogin, useMe } from "@/lib/session";
@@ -108,6 +109,15 @@ export default function LoginPage() {
           >
             Continue with Hamilton Parker SSO
           </button>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginTop: "16px", fontSize: "12.5px" }}>
+            <Link href="/reset" style={{ color: "var(--app-tx-2)" }}>
+              Forgotten your password?
+            </Link>
+            <Link href="/signup" style={{ color: "var(--app-accent)" }}>
+              Request access
+            </Link>
+          </div>
 
           <div style={{ marginTop: "18px", fontSize: "12px", color: "var(--app-tx-3)", lineHeight: "1.6" }}>Signed in as an estimator you see your own bid board. Purchasing and sales see the same jobs with their own columns.</div>
         </form>

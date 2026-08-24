@@ -23,7 +23,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { useManifest } from "@/lib/documents";
+import { useForceRead, useManifest } from "@/lib/documents";
 import type { SourceRegion } from "@/lib/openings";
 import type { Document, DocumentManifest } from "@/lib/schema";
 
@@ -125,6 +125,10 @@ export function SheetViewer({
               {current ? "This page has no rendered image yet." : "Nothing to show — upload a bid set first."}
             </div>
           )}
+
+          {current && current.ocr_route === "SKIP" ? (
+            <SkipNotice page={current} documentId={activeDocumentId} />
+          ) : null}
         </div>
 
         <div style={{ flexShrink: "0", width: "56px", display: "flex", flexDirection: "column", gap: "8px", overflowY: "auto", overflowX: "hidden" }}>
@@ -215,4 +219,51 @@ function routeLabel(p: DocumentManifest): string {
     default:
       return p.ocr_route ?? "—";
   }
+}
+
+
+/**
+ * A page the system decided not to read, with the reason and a way to overrule it.
+ *
+ * "Never silently skip" is a design rule, not a preference (§4.3): a page the
+ * system chose to ignore is exactly the kind of omission NFR-2 forbids, and
+ * triage's one new failure mode is a schedule the classifier did not recognise
+ * (Risk R12). So the decision is stated in words, and the estimator can overrule
+ * it — which reprocesses just that page and teaches the anchors.
+ */
+function SkipNotice({
+  page,
+  documentId,
+}: {
+  page: DocumentManifest;
+  documentId: string | undefined;
+}) {
+  const force = useForceRead(documentId);
+  const forced = Boolean(page.forced_by_user);
+
+  return (
+    <div style={{ position: "sticky", bottom: 0, display: "flex", alignItems: "flex-start", gap: "10px", background: "var(--app-bg-2)", borderTop: "1px solid var(--app-line)", padding: "11px 13px" }}>
+      <i className="ph-duotone ph-eye-slash" style={{ fontSize: "17px", color: "var(--app-tx-3)", flexShrink: 0, marginTop: "1px" }}></i>
+      <span style={{ flex: 1, minWidth: 0, fontSize: "12px", color: "var(--app-tx-2)", lineHeight: 1.55 }}>
+        <strong style={{ color: "var(--app-tx)" }}>This page was not read.</strong>{" "}
+        {page.skip_reason || page.route_reason || "Triage classified it as a drawing."} Nothing on it
+        has been extracted.
+      </span>
+      <button
+        onClick={() => {
+          const reason = window.prompt(
+            "Read this page anyway?\n\nSay why, so the classifier learns from it.",
+            "There is a schedule on this sheet.",
+          );
+          if (reason === null) return;
+          force.mutate({ pageId: page.id, reason });
+        }}
+        disabled={force.isPending || forced}
+        className="hv-f68886"
+        style={{ flexShrink: 0, background: "var(--app-panel)", border: "1px solid var(--app-line)", color: forced ? "var(--app-tx-3)" : "var(--app-accent)", borderRadius: "9px", padding: "7px 12px", fontFamily: "var(--app-font)", fontSize: "12px", fontWeight: 600, cursor: force.isPending || forced ? "default" : "pointer", whiteSpace: "nowrap" }}
+      >
+        {forced ? "Queued to read" : force.isPending ? "Queueing…" : "Read it anyway"}
+      </button>
+    </div>
+  );
 }

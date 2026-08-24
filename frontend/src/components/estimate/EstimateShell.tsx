@@ -4,8 +4,9 @@
  * The estimate workspace: the bid-progress stepper and the action bar, ported
  * from the "bid progress" and "action bar" sections of the Ops-Hub prototype.
  *
- * Four stages — Intake, Extraction & entry, Quote, Proposal. Stages whose screens
- * are not built yet render in place and disabled, with a title saying so.
+ * Four stages — Intake, Extraction & entry, Quote, Proposal. `built` gates a
+ * stage: an unbuilt one renders in place and disabled rather than linking
+ * somewhere that 404s. All four are built.
  */
 
 import Link from "next/link";
@@ -19,8 +20,8 @@ export type StageKey = 1 | 2 | 3 | 4;
 export const STAGES: { key: StageKey; label: string; icon: string; path: string; built: boolean }[] = [
   { key: 1, label: "Intake", icon: "ph-duotone ph-folder-open", path: "", built: true },
   { key: 2, label: "Extraction & entry", icon: "ph-duotone ph-list-checks", path: "/lines", built: true },
-  { key: 3, label: "Quote", icon: "ph-duotone ph-calculator", path: "/quote", built: false },
-  { key: 4, label: "Proposal", icon: "ph-duotone ph-file-text", path: "/proposal", built: false },
+  { key: 3, label: "Quote", icon: "ph-duotone ph-calculator", path: "/quote", built: true },
+  { key: 4, label: "Proposal", icon: "ph-duotone ph-file-text", path: "/proposal", built: true },
 ];
 
 export function EstimateShell({

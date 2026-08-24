@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, type Paginated } from "./api";
 import type { Project } from "./schema";
 
@@ -41,6 +41,26 @@ export function useProject(id: string | undefined) {
     queryKey: ["projects", id],
     queryFn: () => apiFetch<Project>(`/api/projects/${id}/`),
     enabled: Boolean(id),
+  });
+}
+
+export function useUpdateProject(id: string) {
+  const qc = useQueryClient();
+  return useMutation<Project, Error, Partial<Project>>({
+    mutationFn: (patch) =>
+      apiFetch<Project>(`/api/projects/${id}/`, { method: "PATCH", body: JSON.stringify(patch) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects", id] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
+
+export function useDeleteProject(id: string) {
+  const qc = useQueryClient();
+  return useMutation<void, Error, void>({
+    mutationFn: () => apiFetch<void>(`/api/projects/${id}/`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
   });
 }
 

@@ -26,6 +26,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libwebp7 \
         libqpdf29 \
         curl \
+    # WeasyPrint renders the customer-facing proposal (C7, FR-10), and it is a
+    # binding over Pango, cairo and GDK-PixBuf rather than pure Python — pip
+    # installs the wrapper and says nothing about the libraries it dlopen()s.
+    # Without these the export raises OSError on `from weasyprint import HTML`,
+    # at the far end of an SQS handoff, which is a rendering failure that only
+    # shows up as a message in the dead-letter queue.
+        libglib2.0-0 \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz0b \
+        libcairo2 \
+        libgdk-pixbuf-2.0-0 \
+        libffi8 \
+        shared-mime-info \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
