@@ -3359,6 +3359,16 @@ export interface components {
             /** @description Rendered PDF in the derived bucket. */
             readonly export_key: string | null;
             /**
+             * @description Where the browser fetches the rendered proposal, or null before one exists.
+             *
+             *     ``export_key`` is an S3 key, which a browser cannot do anything with — so
+             *     without this the review UI's download button points at nothing. Built with
+             *     the same helper the source viewer already uses for page rasters, so the
+             *     derived bucket has exactly one addressing rule: CloudFront in production,
+             *     the local endpoint in development.
+             */
+            readonly export_url: string | null;
+            /**
              * Format: email
              * @description Captured initiator, never a group inbox (FR-10).
              */

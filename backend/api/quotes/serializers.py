@@ -90,6 +90,7 @@ class VendorRFQSerializer(serializers.ModelSerializer):
 class QuoteSerializer(serializers.ModelSerializer):
     lines = QuoteLineSerializer(many=True, read_only=True)
     freight_display = serializers.SerializerMethodField()
+    export_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Quote
@@ -98,13 +99,15 @@ class QuoteSerializer(serializers.ModelSerializer):
             "subtotal_sale", "freight_amount", "freight_display",
             "tax_jurisdiction", "tax_rate_applied", "tax_amount", "grand_total",
             "notes", "terms_version",
-            "approved_by", "approved_at", "exported_at", "export_key", "exported_to_email",
+            "approved_by", "approved_at", "exported_at", "export_key", "export_url",
+            "exported_to_email",
             "lines", "created_at", "updated_at",
         ]
         read_only_fields = [
             "id", "created_by", "status", "subtotal_sale", "tax_rate_applied",
             "tax_amount", "grand_total", "approved_by", "approved_at",
-            "exported_at", "export_key", "exported_to_email", "created_at", "updated_at",
+            "exported_at", "export_key", "export_url", "exported_to_email",
+            "created_at", "updated_at",
         ]
 
     def get_freight_display(self, obj) -> str:
@@ -117,6 +120,20 @@ class QuoteSerializer(serializers.ModelSerializer):
         absence honestly.
         """
         return "TBD" if obj.freight_amount is None else f"{obj.freight_amount:.2f}"
+
+    def get_export_url(self, obj) -> str | None:
+        """
+        Where the browser fetches the rendered proposal, or null before one exists.
+
+        ``export_key`` is an S3 key, which a browser cannot do anything with — so
+        without this the review UI's download button points at nothing. Built with
+        the same helper the source viewer already uses for page rasters, so the
+        derived bucket has exactly one addressing rule: CloudFront in production,
+        the local endpoint in development.
+        """
+        from projects.storage_ops import public_raster_url
+
+        return public_raster_url(obj.export_key) if obj.export_key else None
 
 
 class QuoteWriteSerializer(serializers.ModelSerializer):

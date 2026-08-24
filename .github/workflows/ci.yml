@@ -47,6 +47,23 @@ jobs:
       - run: uv run ruff check .
         working-directory: backend
 
+      # The frontend was never checked here at all: package.json carried a `lint`
+      # script with no eslint installed, so it had only ever exited "eslint: not
+      # found", and nothing ran tsc outside a developer's own machine.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      # Types first: it is the cheaper gate and the one that catches a drifted
+      # API contract, which is the defect the generated types exist to prevent.
+      - run: npx tsc --noEmit
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+
   test:
     runs-on: ubuntu-latest
     services:
